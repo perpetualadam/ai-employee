@@ -1,0 +1,370 @@
+"use client";
+
+import Link from "next/link";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+
+import { Button, buttonVariants } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { api, ApiError, Business } from "@/lib/api";
+import { getToken } from "@/lib/auth";
+import { cn } from "@/lib/utils";
+
+const INDUSTRIES = [
+  { value: "plumbing", label: "Plumbing" },
+  { value: "electrical", label: "Electrical" },
+  { value: "hvac", label: "HVAC" },
+  { value: "roofing", label: "Roofing" },
+  { value: "general", label: "General trades" },
+];
+
+const STEPS = [
+  { title: "Welcome", description: "Let's set up your AI employee" },
+  { title: "Business", description: "Tell us about your company" },
+  { title: "Services", description: "What jobs do you take?" },
+  { title: "Phone", description: "Connect your phone line" },
+  { title: "Go live", description: "Test and launch" },
+];
+
+function OnboardingWizard() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const step = Math.min(4, Math.max(0, Number(searchParams.get("step") ?? 0)));
+
+  const [, setBusiness] = useState<Business | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const [form, setForm] = useState({
+    name: "",
+    industry: "plumbing",
+    timezone: "America/New_York",
+    phone_number: "",
+    escalation_phone: "",
+    ai_instructions: "",
+  });
+
+  useEffect(() => {
+    if (!getToken()) {
+      router.replace("/login");
+      return;
+    }
+    api
+      .getBusiness()
+      .then((biz) => {
+        if (biz.onboarding_completed) {
+          router.replace("/dashboard");
+          return;
+        }
+        setBusiness(biz);
+        setForm({
+          name: biz.name.endsWith("'s Business") ? "" : biz.name,
+          industry: biz.industry,
+          timezone: biz.timezone,
+          phone_number: biz.phone_number ?? "",
+          escalation_phone: biz.escalation_phone ?? "",
+          ai_instructions: biz.ai_instructions ?? "",
+        });
+      })
+      .catch(() => router.replace("/login"))
+      .finally(() => setLoading(false));
+  }, [router]);
+
+  function goToStep(n: number) {
+    router.push(`/onboarding?step=${n}`);
+  }
+
+  async function saveBusiness(fields: Partial<typeof form>) {
+    setSaving(true);
+    setError("");
+    try {
+      const updated = await api.updateBusiness({
+        ...fields,
+        phone_number: fields.phone_number || undefined,
+        escalation_phone: fields.escalation_phone || undefined,
+        ai_instructions: fields.ai_instructions || undefined,
+      });
+      setBusiness(updated);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to save");
+      throw err;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleStep1Next() {
+    if (!form.name.trim()) {
+      setError("Business name is required");
+      return;
+    }
+    await saveBusiness({
+      name: form.name,
+      industry: form.industry,
+      timezone: form.timezone,
+    });
+    goToStep(2);
+  }
+
+  async function handleStep2Next() {
+    setSaving(true);
+    try {
+      await api.seedDefaults();
+      goToStep(3);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to add services");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleStep3Next() {
+    await saveBusiness({
+      phone_number: form.phone_number,
+      escalation_phone: form.escalation_phone,
+      ai_instructions: form.ai_instructions,
+    });
+    goToStep(4);
+  }
+
+  async function handleComplete() {
+    setSaving(true);
+    try {
+      await api.completeOnboarding();
+      router.push("/dashboard");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to complete setup");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-muted/30">
+      <header className="border-b bg-background">
+        <div className="mx-auto flex h-16 max-w-3xl items-center justify-between px-4">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-xs font-bold text-primary-foreground">
+              AI
+            </div>
+            <span className="font-semibold">Setup wizard</span>
+          </div>
+          <Link href="/dashboard" className="text-sm text-muted-foreground hover:text-foreground">
+            Skip for now
+          </Link>
+        </div>
+      </header>
+
+      <div className="mx-auto max-w-3xl px-4 py-8">
+        {/* Progress */}
+        <div className="mb-8 flex gap-2">
+          {STEPS.map((s, i) => (
+            <div key={s.title} className="flex-1">
+              <div
+                className={cn(
+                  "h-1.5 rounded-full",
+                  i <= step ? "bg-primary" : "bg-muted",
+                )}
+              />
+              <p className="mt-2 hidden text-xs text-muted-foreground sm:block">{s.title}</p>
+            </div>
+          ))}
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{STEPS[step].title}</CardTitle>
+            <CardDescription>{STEPS[step].description}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {step === 0 && (
+              <div className="space-y-4">
+                <p className="text-muted-foreground">
+                  In the next few minutes you&apos;ll configure your AI receptionist to answer calls,
+                  book jobs, and update your CRM — just like a real employee.
+                </p>
+                <ul className="space-y-2 text-sm">
+                  <li className="flex gap-2">
+                    <span className="text-primary">✓</span> 14-day free trial included
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="text-primary">✓</span> No credit card required to start
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="text-primary">✓</span> Works with your existing phone number
+                  </li>
+                </ul>
+                <Button onClick={() => goToStep(1)}>Get started</Button>
+              </div>
+            )}
+
+            {step === 1 && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="biz-name">Business name</Label>
+                  <Input
+                    id="biz-name"
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    placeholder="Mike's Plumbing"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="industry">Industry</Label>
+                  <select
+                    id="industry"
+                    value={form.industry}
+                    onChange={(e) => setForm({ ...form, industry: e.target.value })}
+                    className="h-8 w-full rounded-lg border border-input bg-background px-2 text-sm"
+                  >
+                    {INDUSTRIES.map((i) => (
+                      <option key={i.value} value={i.value}>
+                        {i.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="tz">Timezone</Label>
+                  <Input
+                    id="tz"
+                    value={form.timezone}
+                    onChange={(e) => setForm({ ...form, timezone: e.target.value })}
+                  />
+                </div>
+                <Button onClick={handleStep1Next} disabled={saving}>
+                  {saving ? "Saving..." : "Continue"}
+                </Button>
+              </div>
+            )}
+
+            {step === 2 && (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  We&apos;ll add common services for your trade. The AI uses these when booking
+                  appointments and quoting jobs.
+                </p>
+                <ul className="rounded-lg border p-4 text-sm space-y-2">
+                  <li>• Drain cleaning (60 min)</li>
+                  <li>• Water heater repair (90 min)</li>
+                  <li>• Emergency leak repair (60 min, urgent)</li>
+                </ul>
+                <p className="text-sm text-muted-foreground">
+                  You can add more services later in Settings.
+                </p>
+                <Button onClick={handleStep2Next} disabled={saving}>
+                  {saving ? "Adding services..." : "Add default services"}
+                </Button>
+              </div>
+            )}
+
+            {step === 3 && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="phone">Twilio phone number (E.164)</Label>
+                  <Input
+                    id="phone"
+                    value={form.phone_number}
+                    onChange={(e) => setForm({ ...form, phone_number: e.target.value })}
+                    placeholder="+15551234567"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    The number customers call. Must match your Twilio number.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="escalation">Your cell phone (escalation)</Label>
+                  <Input
+                    id="escalation"
+                    value={form.escalation_phone}
+                    onChange={(e) => setForm({ ...form, escalation_phone: e.target.value })}
+                    placeholder="+15559876543"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Urgent calls transfer here.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="instructions">Special instructions for AI (optional)</Label>
+                  <Textarea
+                    id="instructions"
+                    value={form.ai_instructions}
+                    onChange={(e) => setForm({ ...form, ai_instructions: e.target.value })}
+                    placeholder="e.g. We don't work on Sundays. Always ask about warranty status."
+                    rows={3}
+                  />
+                </div>
+                <Button onClick={handleStep3Next} disabled={saving}>
+                  {saving ? "Saving..." : "Continue"}
+                </Button>
+              </div>
+            )}
+
+            {step === 4 && (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Your AI receptionist is configured. Test it with a practice conversation, then
+                  point your Twilio number to the webhook URL in Settings.
+                </p>
+                <div className="rounded-lg border bg-muted/50 p-4 text-sm space-y-2">
+                  <p className="font-medium">First-call checklist</p>
+                  <ul className="space-y-1 text-muted-foreground">
+                    <li>1. Test the AI in the receptionist simulator</li>
+                    <li>2. Configure Twilio voice webhook (Settings page)</li>
+                    <li>3. Call your number and book a test appointment</li>
+                    <li>4. Check the appointment appears in Calendar</li>
+                  </ul>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <Link
+                    href="/dashboard/receptionist"
+                    className={buttonVariants({ variant: "outline" })}
+                  >
+                    Test AI receptionist
+                  </Link>
+                  <Button onClick={handleComplete} disabled={saving}>
+                    {saving ? "Finishing..." : "Finish setup"}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {error && <p className="text-sm text-destructive">{error}</p>}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+export default function OnboardingPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center">
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      }
+    >
+      <OnboardingWizard />
+    </Suspense>
+  );
+}
