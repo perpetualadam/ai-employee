@@ -85,7 +85,7 @@ class OnboardingService:
             {
                 "id": "phone",
                 "title": "Configure phone numbers",
-                "description": "Connect your Twilio number and escalation line",
+                "description": "Connect your Telnyx number and escalation line",
                 "completed": bool(business.phone_number),
                 "href": "/onboarding?step=3",
             },

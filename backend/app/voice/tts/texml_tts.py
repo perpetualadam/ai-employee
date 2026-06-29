@@ -1,17 +1,13 @@
-"""Twilio TTS via <Say> — implements TextToSpeechProvider for TwiML responses."""
+"""TeXML TTS via <Say> — formats text for spoken delivery."""
 
-from app.voice.twiml_builder import VOICE, LANGUAGE
+from app.voice.texml_builder import LANGUAGE, VOICE
 
 
-class TwilioSayTTS:
-    """
-    Twilio Polly TTS is rendered server-side via TwiML <Say>.
-    This class formats text for voice-friendly output.
-    """
+class TeXMLSayTTS:
+    """Telnyx renders speech server-side via TeXML <Say>."""
 
     @staticmethod
     def prepare_for_speech(text: str, max_length: int = 1200) -> str:
-        """Trim and clean AI response for spoken delivery."""
         cleaned = text.replace("*", "").replace("#", "").replace("`", "")
         cleaned = " ".join(cleaned.split())
         if len(cleaned) > max_length:

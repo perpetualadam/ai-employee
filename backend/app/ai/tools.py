@@ -71,7 +71,10 @@ RECEPTIONIST_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "book_appointment",
-            "description": "Book an appointment for a customer",
+            "description": (
+                "Book an appointment for a customer. "
+                "Requires lookup/create customer and check_availability first."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -89,11 +92,17 @@ RECEPTIONIST_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "check_availability",
-            "description": "Check available appointment slots for a given date",
+            "description": (
+                "Check available appointment slots for a given date. "
+                "Use YYYY-MM-DD or relative terms: today, tomorrow."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "date": {"type": "string", "description": "YYYY-MM-DD"},
+                    "date": {
+                        "type": "string",
+                        "description": "YYYY-MM-DD, or today, or tomorrow (business local time)",
+                    },
                     "service_type": {"type": "string"},
                 },
                 "required": ["date"],
@@ -104,16 +113,16 @@ RECEPTIONIST_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "create_customer",
-            "description": "Create a new customer record",
+            "description": "Create a new customer record after collecting name, phone, and address",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "name": {"type": "string"},
                     "phone": {"type": "string"},
                     "email": {"type": "string"},
-                    "address": {"type": "string"},
+                    "address": {"type": "string", "description": "Service address where work is needed"},
                 },
-                "required": ["name", "phone"],
+                "required": ["name", "phone", "address"],
             },
         },
     },

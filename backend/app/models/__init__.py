@@ -1,5 +1,6 @@
 """SQLAlchemy ORM models — all tenant-scoped tables include business_id."""
 
+import enum
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 from uuid import uuid4
@@ -32,6 +33,11 @@ from app.models.enums import (
 
 if TYPE_CHECKING:
     pass
+
+
+def _enum_values(enum_class: type[enum.Enum]) -> list[str]:
+    """Persist Python enum values (e.g. plumbing) not names (PLUMBING)."""
+    return [member.value for member in enum_class]
 
 
 class TimestampMixin:
@@ -80,7 +86,7 @@ class Business(Base, TimestampMixin):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     industry: Mapped[Industry] = mapped_column(
-        Enum(Industry, name="industry"), default=Industry.PLUMBING, nullable=False
+        Enum(Industry, name="industry", values_callable=_enum_values), default=Industry.PLUMBING, nullable=False
     )
     country: Mapped[str] = mapped_column(String(2), default="US", nullable=False)
     timezone: Mapped[str] = mapped_column(String(64), default="America/New_York", nullable=False)
@@ -95,12 +101,12 @@ class Business(Base, TimestampMixin):
     stripe_customer_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
     stripe_subscription_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
     subscription_status: Mapped[SubscriptionStatus] = mapped_column(
-        Enum(SubscriptionStatus, name="subscription_status"),
+        Enum(SubscriptionStatus, name="subscription_status", values_callable=_enum_values),
         default=SubscriptionStatus.TRIALING,
         nullable=False,
     )
     plan_tier: Mapped[PlanTier] = mapped_column(
-        Enum(PlanTier, name="plan_tier"),
+        Enum(PlanTier, name="plan_tier", values_callable=_enum_values),
         default=PlanTier.STARTER,
         nullable=False,
     )
@@ -171,7 +177,7 @@ class BusinessEmergencyRule(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     keywords: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
     action: Mapped[EmergencyAction] = mapped_column(
-        Enum(EmergencyAction, name="emergency_action"), nullable=False
+        Enum(EmergencyAction, name="emergency_action", values_callable=_enum_values), nullable=False
     )
     instructions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -237,7 +243,7 @@ class Job(Base, TimestampMixin):
     service_type: Mapped[str] = mapped_column(String(255), nullable=False)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[JobStatus] = mapped_column(
-        Enum(JobStatus, name="job_status"), default=JobStatus.LEAD, nullable=False
+        Enum(JobStatus, name="job_status", values_callable=_enum_values), default=JobStatus.LEAD, nullable=False
     )
     appointment_time: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -274,7 +280,7 @@ class Appointment(Base, TimestampMixin):
     start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     status: Mapped[AppointmentStatus] = mapped_column(
-        Enum(AppointmentStatus, name="appointment_status"),
+        Enum(AppointmentStatus, name="appointment_status", values_callable=_enum_values),
         default=AppointmentStatus.SCHEDULED,
         nullable=False,
     )
@@ -310,10 +316,10 @@ class CallLog(Base, TimestampMixin):
     )
     external_call_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
     direction: Mapped[CallDirection] = mapped_column(
-        Enum(CallDirection, name="call_direction"), nullable=False
+        Enum(CallDirection, name="call_direction", values_callable=_enum_values), nullable=False
     )
     status: Mapped[CallStatus] = mapped_column(
-        Enum(CallStatus, name="call_status"), default=CallStatus.RINGING, nullable=False
+        Enum(CallStatus, name="call_status", values_callable=_enum_values), default=CallStatus.RINGING, nullable=False
     )
     caller_phone: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     duration_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

@@ -1,4 +1,4 @@
-"""Voice call orchestration — ties Twilio webhooks to the AI receptionist."""
+"""Voice call orchestration — ties Telnyx TeXML webhooks to the AI receptionist."""
 
 import logging
 from uuid import uuid4
@@ -9,14 +9,15 @@ from app.ai.receptionist_agent import ReceptionistAgent, get_ai_provider
 from app.config import get_settings
 from app.models import Business, CallLog
 from app.models.enums import CallDirection, CallStatus
-from app.voice.stt.twilio_stt import TwilioGatherSTT
-from app.voice.tts.twilio_tts import TwilioSayTTS
-from app.voice.twiml_builder import (
+from app.services.tenant import is_valid_uuid
+from app.voice.stt.gather_stt import GatherSpeechSTT
+from app.voice.texml_builder import (
     build_greeting,
     build_hangup,
     build_say_and_gather,
-    build_transfer_twiml,
+    build_transfer_texml,
 )
+from app.voice.tts.texml_tts import TeXMLSayTTS
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ def normalize_phone(phone: str) -> str:
 
 
 def find_business_by_phone(db: Session, to_number: str) -> Business | None:
-    """Match inbound Twilio number to a business phone_number."""
+    """Match inbound Telnyx number to a business phone_number."""
     normalized = normalize_phone(to_number)
     businesses = db.query(Business).filter(Business.phone_number.isnot(None)).all()
     for biz in businesses:
@@ -71,6 +72,8 @@ def create_voice_call(
 
 
 def get_call_log(db: Session, call_log_id: str, business_id: str | None = None) -> CallLog | None:
+    if not is_valid_uuid(call_log_id):
+        return None
     query = db.query(CallLog).filter(CallLog.id == call_log_id)
     if business_id:
         query = query.filter(CallLog.business_id == business_id)
@@ -85,7 +88,7 @@ async def process_speech_turn(
 ) -> tuple[str, bool]:
     """
     Run one voice conversation turn through the AI receptionist.
-    Returns (twiml_response, escalated).
+    Returns (texml_response, escalated).
     """
     settings = get_settings()
     history: list[dict[str, str]] = list(call_log.conversation_history or [])
@@ -96,17 +99,19 @@ async def process_speech_turn(
             False,
         )
 
+    call_id = call_log.id
     try:
-        agent = ReceptionistAgent(db, business, get_ai_provider(), call_log_id=call_log.id)
+        agent = ReceptionistAgent(db, business, get_ai_provider(), call_log_id=call_id)
         result = await agent.chat(speech_text, history, voice_mode=True)
     except Exception:
-        logger.exception("Voice AI turn failed", extra={"call_log_id": call_log.id})
+        db.rollback()
+        logger.exception("Voice AI turn failed", extra={"call_log_id": call_id})
         return (
             build_hangup("Sorry, I'm having technical difficulties. Please try again later."),
             False,
         )
 
-    reply = TwilioSayTTS.prepare_for_speech(result["reply"])
+    reply = TeXMLSayTTS.prepare_for_speech(result["reply"])
     db.refresh(call_log)
     call_log.escalated = result["escalated"]
     db.commit()
@@ -114,7 +119,7 @@ async def process_speech_turn(
     if result["escalated"]:
         escalation = business.escalation_phone or business.phone_number
         if escalation:
-            return build_transfer_twiml(escalation), True
+            return build_transfer_texml(escalation), True
         return (
             build_hangup(
                 "I've notified our team about your request. Someone will call you back shortly. Goodbye!"
@@ -126,7 +131,7 @@ async def process_speech_turn(
 
 
 def handle_inbound_call(db: Session, call_sid: str, from_number: str, to_number: str) -> str:
-    """Create call record and return initial TwiML greeting."""
+    """Create call record and return initial TeXML greeting."""
     settings = get_settings()
     business = find_business_by_phone(db, to_number)
 
@@ -157,7 +162,7 @@ async def handle_gather_result(
     speech_result: str | None,
     confidence: str | None = None,
 ) -> str:
-    """Process Twilio Gather speech result and return next TwiML."""
+    """Process Gather speech result and return next TeXML."""
     call_log = get_call_log(db, call_log_id)
     if call_log is None:
         return build_hangup("Sorry, this session has expired. Goodbye.")
@@ -166,7 +171,7 @@ async def handle_gather_result(
     if business is None:
         return build_hangup("Sorry, this business is not available. Goodbye.")
 
-    if TwilioGatherSTT.is_empty(speech_result):
+    if GatherSpeechSTT.is_empty(speech_result):
         settings = get_settings()
         return build_say_and_gather(
             "I'm sorry, I didn't catch that. Could you please repeat?",
@@ -174,9 +179,12 @@ async def handle_gather_result(
             call_log.id,
         )
 
-    chunk = TwilioGatherSTT.from_speech_result(speech_result or "", float(confidence) if confidence else None)
-    twiml, _ = await process_speech_turn(db, call_log, business, chunk.text)
-    return twiml
+    chunk = GatherSpeechSTT.from_speech_result(
+        speech_result or "",
+        float(confidence) if confidence else None,
+    )
+    texml, _ = await process_speech_turn(db, call_log, business, chunk.text)
+    return texml
 
 
 def handle_call_status(
@@ -185,7 +193,7 @@ def handle_call_status(
     call_status: str,
     call_duration: str | None = None,
 ) -> None:
-    """Update call log when Twilio sends status callback."""
+    """Update call log when Telnyx sends status callback."""
     call_log = get_call_log(db, call_log_id)
     if call_log is None:
         return

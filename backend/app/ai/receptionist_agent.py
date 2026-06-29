@@ -11,7 +11,7 @@ from app.ai.groq_provider import GroqProvider, serialize_tool_result, tool_defin
 from app.ai.prompts import build_receptionist_prompt
 from app.ai.provider import AIMessage, AIProvider
 from app.ai.receptionist_tools import ReceptionistToolsImpl
-from app.ai.tools import RECEPTIONIST_TOOL_DEFINITIONS
+from app.ai.tools import RECEPTIONIST_TOOL_DEFINITIONS, ToolResult
 from app.models import AIActivityLog, Business, CallLog
 from app.models.enums import CallDirection, CallStatus
 from app.services.business_service import BusinessServiceManager
@@ -122,15 +122,35 @@ class ReceptionistAgent:
                     extra={"tool": tool_name, "business_id": self.business.id},
                 )
 
-                result = await self.tools_impl.dispatch(tool_name, arguments)
+                try:
+                    result = await self.tools_impl.dispatch(tool_name, arguments)
+                except Exception:
+                    self.db.rollback()
+                    logger.exception(
+                        "Tool execution failed",
+                        extra={"tool": tool_name, "business_id": self.business.id},
+                    )
+                    result = ToolResult(
+                        success=False,
+                        data={},
+                        message="That action failed. Try again or ask the caller for more details.",
+                    )
+
                 tools_used.append(tool_name)
 
-                self._log_activity(
-                    action="tool_call",
-                    tool_name=tool_name,
-                    input_data=arguments,
-                    output_data=asdict(result),
-                )
+                try:
+                    self._log_activity(
+                        action="tool_call",
+                        tool_name=tool_name,
+                        input_data=arguments,
+                        output_data=asdict(result),
+                    )
+                except Exception:
+                    self.db.rollback()
+                    logger.exception(
+                        "Failed to log tool activity",
+                        extra={"tool": tool_name, "business_id": self.business.id},
+                    )
 
                 messages.append(
                     AIMessage(

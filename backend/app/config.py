@@ -31,9 +31,11 @@ class Settings(BaseSettings):
     # Future integrations (Phase 3+)
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
-    twilio_account_sid: str = ""
-    twilio_auth_token: str = ""
-    twilio_phone_number: str = ""
+    telnyx_api_key: str = ""
+    telnyx_public_key: str = ""
+    telnyx_account_sid: str = ""
+    telnyx_phone_number: str = ""
+    telnyx_messaging_profile_id: str = ""
     public_api_url: str = "http://localhost:8000"
     deepgram_api_key: str = ""
     voice_mode: str = "gather"  # gather | stream

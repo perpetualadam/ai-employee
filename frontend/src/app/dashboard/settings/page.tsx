@@ -91,7 +91,7 @@ export default function SettingsPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="phone">Twilio phone number (E.164)</Label>
+              <Label htmlFor="phone">Telnyx phone number (E.164)</Label>
               <Input
                 id="phone"
                 value={form.phone_number}
@@ -99,7 +99,7 @@ export default function SettingsPage() {
                 placeholder="+15551234567"
               />
               <p className="text-xs text-muted-foreground">
-                Must match your Twilio number. Used to route inbound calls to this business.
+                Must match your Telnyx number. Used to route inbound calls to this business.
               </p>
             </div>
             <div className="space-y-2">
@@ -133,25 +133,28 @@ export default function SettingsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Twilio voice setup</CardTitle>
-            <CardDescription>Configure your Twilio phone number webhooks</CardDescription>
+            <CardTitle>Telnyx voice setup</CardTitle>
+            <CardDescription>
+              Create a TeXML Application in Telnyx Mission Control and assign your number
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div>
-              <p className="font-medium">Voice URL (POST)</p>
+              <p className="font-medium">TeXML webhook URL (GET or POST)</p>
               <code className="mt-1 block rounded bg-muted p-2 text-xs break-all">
                 {publicApiUrl}/api/v1/voice/inbound
               </code>
             </div>
             <div>
-              <p className="font-medium">Status callback (POST)</p>
+              <p className="font-medium">Status callback (optional)</p>
               <code className="mt-1 block rounded bg-muted p-2 text-xs break-all">
                 {publicApiUrl}/api/v1/voice/status
               </code>
             </div>
             <p className="text-muted-foreground">
               For local dev, expose your API with ngrok and set PUBLIC_API_URL in backend .env.
-              Set GROQ_API_KEY and Twilio credentials on the backend.
+              Set GROQ_API_KEY and Telnyx credentials (TELNYX_API_KEY, TELNYX_PUBLIC_KEY,
+              TELNYX_ACCOUNT_SID) on the backend.
             </p>
           </CardContent>
         </Card>

@@ -13,7 +13,7 @@ AI receptionist SaaS for trade businesses. Answers calls, qualifies leads, books
                     ┌──────────────────────────┼──────────────────────────┐
                     │                          │                          │
               ┌─────▼─────┐            ┌───────▼───────┐          ┌───────▼───────┐
-              │ PostgreSQL │            │  Groq API     │          │ Twilio/Telnyx │
+              │ PostgreSQL │            │  Groq API     │          │ Telnyx        │
               │ (multi-    │            │  (Phase 3)    │          │ (Phase 4)     │
               │  tenant)   │            └───────────────┘          └───────────────┘
               └───────────┘
@@ -41,7 +41,7 @@ Every tenant-scoped table includes `business_id`. API routes resolve the authent
 
 - `backend/app/ai/provider.py` — swappable AI provider interface (Groq first)
 - `backend/app/ai/tools.py` — receptionist tool definitions
-- `backend/app/voice/provider.py` — swappable voice provider (Twilio first)
+- `backend/app/voice/provider.py` — swappable voice provider (Telnyx TeXML)
 
 ## Quick start
 
@@ -94,6 +94,29 @@ App runs at `http://localhost:3000`.
 
 New accounts get a **14-day free trial** on the Starter plan limits. AI receptionist and voice calls require an active trial or subscription.
 
+## Telnyx voice setup
+
+1. Create an account at [Telnyx Mission Control](https://portal.telnyx.com/).
+2. **API Keys** → create a key → add to `.env` as `TELNYX_API_KEY`.
+3. Copy your **Account SID** (UUID on dashboard) → `TELNYX_ACCOUNT_SID`.
+4. **Keys & Credentials → Public Key** → `TELNYX_PUBLIC_KEY` (for webhook verification).
+5. **Numbers** → buy a number → assign to a **TeXML Application**:
+   - Voice URL: `https://your-api/api/v1/voice/inbound` (GET or POST)
+6. Optional SMS: create a **Messaging Profile**, add `TELNYX_MESSAGING_PROFILE_ID`.
+7. Add to `.env`:
+   ```bash
+   TELNYX_API_KEY=KEY...
+   TELNYX_PUBLIC_KEY=...
+   TELNYX_ACCOUNT_SID=...
+   TELNYX_PHONE_NUMBER=+1...
+   TELNYX_MESSAGING_PROFILE_ID=...   # optional
+   PUBLIC_API_URL=https://your-ngrok-or-api-url
+   VOICE_MODE=gather
+   ```
+8. In the app **Settings**, set the same phone number and an escalation phone.
+
+For local dev, run `ngrok http 8000` and set `PUBLIC_API_URL` to the ngrok HTTPS URL.
+
 ## Development phases
 
 | Phase | Status | Scope |
@@ -101,7 +124,7 @@ New accounts get a **14-day free trial** on the Starter plan limits. AI receptio
 | 1 | **Done** | Database, auth, dashboard shell |
 | **2** | **Done** | CRM + appointments API & UI |
 | **3** | **Done** | AI text receptionist (Groq + tools) |
-| **4** | **Done** | Voice calling (Twilio + STT/TTS) |
+| **4** | **Done** | Voice calling (Telnyx TeXML + speech gather) |
 | **5** | **Done** | Stripe billing + usage limits |
 | **6** | **Done** | Onboarding wizard + checklist + empty states |
 
@@ -124,10 +147,9 @@ New accounts get a **14-day free trial** on the Starter plan limits. AI receptio
 | PATCH | `/api/v1/appointments/{id}` | Reschedule / update |
 | POST | `/api/v1/appointments/{id}/cancel` | Cancel appointment |
 | POST | `/api/v1/receptionist/chat` | Chat with AI receptionist |
-| POST | `/api/v1/voice/inbound` | Twilio inbound call webhook |
-| POST | `/api/v1/voice/gather` | Twilio speech recognition callback |
-| POST | `/api/v1/voice/status` | Twilio call status callback |
-| WS | `/api/v1/voice/stream` | Twilio Media Streams (real-time STT) |
+| POST/GET | `/api/v1/voice/inbound` | Telnyx TeXML inbound call webhook |
+| POST | `/api/v1/voice/gather` | Telnyx speech gather callback |
+| POST | `/api/v1/voice/status` | Telnyx call status callback |
 | GET | `/api/v1/billing/status` | Subscription status and usage |
 | POST | `/api/v1/billing/checkout` | Start Stripe Checkout |
 | POST | `/api/v1/billing/portal` | Stripe Customer Portal |

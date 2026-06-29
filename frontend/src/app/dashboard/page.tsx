@@ -117,7 +117,7 @@ export default function DashboardPage() {
             <CardContent>
               {data.recent_calls.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No calls yet. Configure Twilio in Settings to enable voice.
+                  No calls yet. Configure Telnyx in Settings to enable voice.
                 </p>
               ) : (
                 <Table>

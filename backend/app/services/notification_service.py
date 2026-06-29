@@ -5,13 +5,13 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.models import Business
-from app.voice.twilio_client import get_twilio_client, is_twilio_configured
+from app.voice import telnyx_client
 
 logger = logging.getLogger(__name__)
 
 
 class NotificationService:
-    """Sends customer notifications via Twilio SMS when configured."""
+    """Sends customer notifications via Telnyx SMS when configured."""
 
     def __init__(self, db: Session, business: Business):
         self.db = db
@@ -21,10 +21,10 @@ class NotificationService:
         from app.config import get_settings
 
         settings = get_settings()
-        return self.business.phone_number or settings.twilio_phone_number or None
+        return self.business.phone_number or settings.telnyx_phone_number or None
 
     def send_sms(self, phone: str, message: str) -> dict:
-        if not is_twilio_configured():
+        if not telnyx_client.is_telnyx_configured():
             logger.info(
                 "SMS logged (dev mode)",
                 extra={"to": phone, "message": message, "business_id": self.business.id},
@@ -34,25 +34,20 @@ class NotificationService:
         from_number = self._from_number()
         if not from_number:
             logger.error("No from number for SMS", extra={"business_id": self.business.id})
-            return {"sent": False, "provider": "twilio", "error": "No sender phone configured"}
-
-        client = get_twilio_client()
-        if client is None:
-            return {"sent": False, "provider": "twilio", "error": "Twilio not configured"}
+            return {"sent": False, "provider": "telnyx", "error": "No sender phone configured"}
 
         try:
-            msg = client.messages.create(body=message, from_=from_number, to=phone)
-            logger.info("SMS sent via Twilio", extra={"sid": msg.sid, "to": phone})
+            result = telnyx_client.send_sms(from_number, phone, message)
             return {
                 "sent": True,
-                "provider": "twilio",
+                "provider": "telnyx",
                 "phone": phone,
                 "message": message,
-                "sid": msg.sid,
+                "id": result.get("id"),
             }
         except Exception as exc:
-            logger.exception("Twilio SMS failed", extra={"to": phone})
-            return {"sent": False, "provider": "twilio", "error": str(exc)}
+            logger.exception("Telnyx SMS failed", extra={"to": phone})
+            return {"sent": False, "provider": "telnyx", "error": str(exc)}
 
     def send_email(self, email: str, subject: str, body: str) -> dict:
         logger.info(

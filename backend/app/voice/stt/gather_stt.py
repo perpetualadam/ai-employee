@@ -1,13 +1,10 @@
-"""Twilio STT via Gather speech recognition — implements SpeechToTextProvider interface."""
+"""Speech-to-text via TeXML Gather — wraps SpeechResult webhook field."""
 
 from app.voice.provider import TranscriptChunk
 
 
-class TwilioGatherSTT:
-    """
-    Twilio converts caller speech to text via <Gather input='speech'>.
-    This adapter wraps the SpeechResult webhook field for the STT interface.
-    """
+class GatherSpeechSTT:
+    """Telnyx TeXML converts caller speech via <Gather input='speech'>."""
 
     @staticmethod
     def from_speech_result(speech_result: str, confidence: float | None = None) -> TranscriptChunk:

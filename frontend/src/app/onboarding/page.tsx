@@ -279,7 +279,7 @@ function OnboardingWizard() {
             {step === 3 && (
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="phone">Twilio phone number (E.164)</Label>
+                  <Label htmlFor="phone">Telnyx phone number (E.164)</Label>
                   <Input
                     id="phone"
                     value={form.phone_number}
@@ -287,7 +287,7 @@ function OnboardingWizard() {
                     placeholder="+15551234567"
                   />
                   <p className="text-xs text-muted-foreground">
-                    The number customers call. Must match your Twilio number.
+                    The number customers call. Must match your Telnyx number.
                   </p>
                 </div>
                 <div className="space-y-2">
@@ -322,13 +322,13 @@ function OnboardingWizard() {
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">
                   Your AI receptionist is configured. Test it with a practice conversation, then
-                  point your Twilio number to the webhook URL in Settings.
+                  point your Telnyx number to the TeXML webhook URL in Settings.
                 </p>
                 <div className="rounded-lg border bg-muted/50 p-4 text-sm space-y-2">
                   <p className="font-medium">First-call checklist</p>
                   <ul className="space-y-1 text-muted-foreground">
                     <li>1. Test the AI in the receptionist simulator</li>
-                    <li>2. Configure Twilio voice webhook (Settings page)</li>
+                    <li>2. Configure Telnyx TeXML application (Settings page)</li>
                     <li>3. Call your number and book a test appointment</li>
                     <li>4. Check the appointment appears in Calendar</li>
                   </ul>

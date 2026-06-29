@@ -1,5 +1,5 @@
 """
-Voice provider abstraction — swap Twilio/Telnyx without changing call flow logic.
+Voice provider abstraction — swap Telnyx or other CPaaS without changing call flow logic.
 """
 
 from abc import ABC, abstractmethod
@@ -40,7 +40,7 @@ class VoiceProvider(ABC):
 
     @abstractmethod
     async def handle_inbound_webhook(self, payload: dict) -> dict:
-        """Process provider webhook (Twilio/Telnyx) and return response TwiML/teXML."""
+        """Process provider webhook and return response TeXML/TwiML."""
         ...
 
     @abstractmethod
@@ -53,4 +53,4 @@ class VoiceProvider(ABC):
         ...
 
 
-# Concrete implementation: app.voice.twilio_provider.TwilioVoiceProvider
+# Concrete implementation: app.voice.telnyx_provider.TelnyxVoiceProvider
