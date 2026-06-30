@@ -1,0 +1,51 @@
+---
+description: Modular design, DRY code, and maintainable structure for all changes
+alwaysApply: true
+---
+
+# Modular, DRY, maintainable code
+
+Follow the layered layout in `backend/app/ARCHITECTURE.md`. Every change should fit one module’s responsibility and stay easy to debug.
+
+## Layer rules
+
+- **Thin boundaries** — `api/` validates and delegates; no business logic in routes.
+- **Domain is pure** — business rules live in `domain/` with no HTTP, Telnyx, DB, or LLM imports.
+- **Services own persistence** — CRM, calendar, billing in `services/`; tools call services, not models directly.
+- **Voice vs AI** — Telnyx/STT/TeXML in `voice/`; LLM agent/tools in `ai/`; shared session state in `ai/conversation_state.py`.
+- **Dependency direction** — outer layers import inner layers only; never the reverse.
+
+## No duplication
+
+- Before adding logic, search for an existing helper in `domain/`, `services/`, or `voice/`.
+- Extract shared logic once; import it. Do not copy-paste validation, phone normalization, slot formatting, or prompt text.
+- One source of truth per behavior (e.g. intake rules → `domain/intake.py`, slot matching → `voice/slots.py`).
+- Prefer extending an existing function over a parallel implementation.
+
+```python
+# ❌ BAD — same validation in api and voice
+if len(name.strip()) < 2: ...
+
+# ✅ GOOD — reuse domain rule
+from app.domain.intake import validate_customer_name
+```
+
+## Streamlined for maintenance and debugging
+
+- **Single responsibility** — one module, one job; split files that mix orchestration, rules, and I/O.
+- **Small, named units** — functions and modules should be easy to locate from logs and stack traces.
+- **Traceable flow** — voice: `api/voice.py` → `gather_handler` → `call_service` → agent/tools → services.
+- **Minimal scope** — smallest correct diff; no drive-by refactors or unrelated changes.
+- **Debug-friendly** — use existing logging patterns; avoid deep nesting and hidden side effects in routes or webhooks.
+
+## Where to put new code
+
+| Change | Location |
+|--------|----------|
+| Business rule (name, address, phone) | `domain/` |
+| Database / tenant CRM or calendar | `services/` + wire in `ai/receptionist_tools.py` |
+| Voice UX (prompts, STT, TeXML) | `voice/` |
+| HTTP endpoint | `api/` + existing service |
+| External provider swap | `ai/provider.py` or `voice/provider.py` ABC |
+
+When unsure, read `backend/app/ARCHITECTURE.md` and match the nearest existing module rather than adding a new parallel path.
