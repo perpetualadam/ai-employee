@@ -117,8 +117,8 @@ export default function ReceptionistPage() {
                 {messages.length === 0 ? (
                   <div className="flex h-full items-center justify-center text-center text-sm text-muted-foreground">
                     <p>
-                      Try: &quot;Hi, I have a leak under my kitchen sink and need someone to come
-                      look at it.&quot;
+                      Example: &quot;Hi, I have a leak under my kitchen sink and need someone to
+                      come look at it.&quot;
                     </p>
                   </div>
                 ) : (

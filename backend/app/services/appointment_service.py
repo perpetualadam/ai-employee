@@ -111,6 +111,23 @@ class AppointmentService:
         return available
 
     @staticmethod
+    def find_next_available(
+        db: Session,
+        business: Business,
+        start_date: date,
+        duration_minutes: int = 60,
+        *,
+        max_days: int = 14,
+    ) -> tuple[date | None, list[dict[str, datetime]]]:
+        """First date on or after start_date with at least one open slot."""
+        for offset in range(max_days):
+            candidate = start_date + timedelta(days=offset)
+            slots = AppointmentService.get_availability(db, business, candidate, duration_minutes)
+            if slots:
+                return candidate, slots
+        return None, []
+
+    @staticmethod
     def _validate_slot_available(
         db: Session,
         business: Business,

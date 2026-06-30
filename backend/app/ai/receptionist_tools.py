@@ -1,7 +1,7 @@
 """Concrete AI receptionist tools backed by CRM and calendar services."""
 
 import logging
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
@@ -187,11 +187,29 @@ class ReceptionistToolsImpl:
         tz = ZoneInfo(self.business.timezone)
         now = business_now(self.business.timezone)
         resolved_date = parsed_date.isoformat()
+        next_date: date | None = None
+        next_slots_raw: list[dict[str, datetime]] = []
+
+        if not slots:
+            next_date, next_slots_raw = AppointmentService.find_next_available(
+                self.db,
+                self.business,
+                parsed_date + timedelta(days=1),
+                duration,
+            )
 
         if self._voice:
             formatted_slots = VoiceSessionState.format_slots(slots, tz)
             slot_msg = f"Found {len(formatted_slots)} available slots on {resolved_date}"
             slot_msg += self._voice.record_availability(formatted_slots)
+            next_formatted: list[dict] = []
+            if not formatted_slots and next_date and next_slots_raw:
+                next_formatted = VoiceSessionState.format_slots(next_slots_raw, tz)
+                slot_msg += (
+                    f" No openings on {resolved_date}. "
+                    f"Next availability is {next_date.isoformat()} with {len(next_formatted)} slots — "
+                    "offer those times. Do NOT transfer_call just because the requested day is full."
+                )
         else:
             formatted_slots = [
                 {
@@ -205,17 +223,38 @@ class ReceptionistToolsImpl:
             self._session.availability_checked = True
             self._availability_checked_this_turn = True
             slot_msg = f"Found {len(formatted_slots)} available slots on {resolved_date}"
+            next_formatted = []
+            if not formatted_slots and next_date and next_slots_raw:
+                next_formatted = [
+                    {
+                        "start_time": s["start_time"].astimezone(tz).isoformat(),
+                        "end_time": s["end_time"].astimezone(tz).isoformat(),
+                        "start_time_utc": s["start_time"].isoformat(),
+                        "end_time_utc": s["end_time"].isoformat(),
+                    }
+                    for s in next_slots_raw
+                ]
+                slot_msg = (
+                    f"No openings on {resolved_date}. "
+                    f"Next availability is {next_date.isoformat()} ({len(next_formatted)} slots in next_slots). "
+                    "Offer 2–3 times from next_slots. Do NOT transfer_call solely because the requested day is full."
+                )
+
+        data: dict = {
+            "date": resolved_date,
+            "requested_date": target_date,
+            "timezone": self.business.timezone,
+            "current_local_time": now.isoformat(),
+            "slots": formatted_slots,
+            "count": len(formatted_slots),
+        }
+        if next_date and next_slots_raw:
+            data["next_available_date"] = next_date.isoformat()
+            data["next_slots"] = next_formatted
 
         return ToolResult(
             success=True,
-            data={
-                "date": resolved_date,
-                "requested_date": target_date,
-                "timezone": self.business.timezone,
-                "current_local_time": now.isoformat(),
-                "slots": formatted_slots,
-                "count": len(formatted_slots),
-            },
+            data=data,
             message=slot_msg,
         )
 
@@ -355,6 +394,26 @@ class ReceptionistToolsImpl:
         return None
 
     async def transfer_call(self, call_id: str, reason: str) -> ToolResult:
+        reason_lower = reason.lower()
+        scheduling_only = (
+            "no available slot" in reason_lower
+            or "no slots" in reason_lower
+            or "fully booked" in reason_lower
+            or "no availability" in reason_lower
+            or "no openings" in reason_lower
+        )
+        if scheduling_only:
+            return ToolResult(
+                success=False,
+                data={"escalated": False},
+                message=(
+                    "Do not escalate because a date is full. Call check_availability for the next "
+                    "business day (or use next_slots from the prior result) and offer those times. "
+                    "Only transfer_call for true emergencies (active flooding, gas smell) or if the "
+                    "customer explicitly insists on speaking to a person."
+                ),
+            )
+
         self.escalated = True
         caller_phone = self._caller_phone_for_escalation()
         live_transfer = False
