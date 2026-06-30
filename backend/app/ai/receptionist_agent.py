@@ -88,6 +88,9 @@ class ReceptionistAgent:
     ) -> dict:
         self._voice_mode = voice_mode
         self.tools_impl.voice_mode = voice_mode
+        self.tools_impl.user_turn_count = len(
+            entry for entry in history if entry.get("role") == "user"
+        ) + 1
         messages: list[AIMessage] = [self._build_system_message(voice_mode=voice_mode)]
 
         for entry in history:

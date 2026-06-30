@@ -20,6 +20,7 @@ class VoiceSessionState(ConversationState):
     offered_slots: list[dict] = field(default_factory=list)
     availability_checked_this_turn: bool = False
     prior_availability_check: bool = False
+    sms_sent_this_call: bool = False
 
     @classmethod
     def load(
@@ -65,9 +66,11 @@ class VoiceSessionState(ConversationState):
         elif log.tool_name == "check_availability":
             self.prior_availability_check = True
             data = output.get("data") or {}
-            slots = data.get("slots") or []
+            slots = data.get("slots") or data.get("next_slots") or []
             if slots:
                 self.offered_slots = slots
+        elif log.tool_name == "send_sms" and output.get("success"):
+            self.sms_sent_this_call = True
 
     def require_intake(self, action: str) -> ToolResult | None:
         if not self.intake_saved_this_call:
@@ -75,7 +78,7 @@ class VoiceSessionState(ConversationState):
                 success=False,
                 data={},
                 message=(
-                    f"Cannot {action} yet on a phone call. Ask for the caller's full name "
+                    f"Cannot {action} yet. Ask for the customer's full name "
                     "and service address, then call create_customer with those details."
                 ),
             )
@@ -114,11 +117,13 @@ class VoiceSessionState(ConversationState):
             )
         return start_time, end_time
 
-    def record_availability(self, formatted_slots: list[dict]) -> str:
+    def record_availability(self, formatted_slots: list[dict], *, voice: bool = True) -> str:
         self.offered_slots = formatted_slots
         self.availability_checked = True
         self.availability_checked_this_turn = True
-        return voice_availability_message(formatted_slots)
+        if voice:
+            return voice_availability_message(formatted_slots)
+        return ""
 
     def mark_intake_saved(
         self,

@@ -6,7 +6,6 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
-from app.ai.conversation_state import ConversationState
 from app.ai.date_utils import business_now, resolve_target_date
 from app.ai.tools import ToolResult
 from app.domain.intake import is_valid_customer_name, is_valid_service_address
@@ -41,22 +40,13 @@ class ReceptionistToolsImpl:
         self.voice_mode = voice_mode
         self.escalated = False
         self.owner_notified = False
-        self._availability_checked_this_turn = False
-        if voice_mode:
-            self._session: ConversationState | VoiceSessionState = VoiceSessionState.load(
-                db, business.id, call_log_id
-            )
-        else:
-            self._session = ConversationState.load_from_call(db, business.id, call_log_id)
-
-    @property
-    def _voice(self) -> VoiceSessionState | None:
-        return self._session if self.voice_mode else None
+        self.user_turn_count = 0
+        self._session: VoiceSessionState = VoiceSessionState.load(
+            db, business.id, call_log_id
+        )
 
     def _require_intake(self, action: str) -> ToolResult | None:
-        if self._voice:
-            return self._voice.require_intake(action)
-        return self._session.require_customer_intake(action)
+        return self._session.require_intake(action)
 
     def _resolve_phone(self, phone: str) -> str:
         resolved = resolve_caller_phone(phone, self._session.caller_phone)
@@ -74,10 +64,9 @@ class ReceptionistToolsImpl:
         if intake_block:
             return intake_block
 
-        if self._voice:
-            same_turn = self._voice.block_same_turn_booking()
-            if same_turn:
-                return same_turn
+        same_turn = self._session.block_same_turn_booking()
+        if same_turn:
+            return same_turn
 
         if customer_id != self._session.verified_customer_id:
             return ToolResult(
@@ -104,11 +93,10 @@ class ReceptionistToolsImpl:
                 ),
             )
 
-        if self._voice:
-            slot_result = self._voice.validate_and_resolve_slot(start_time, end_time)
-            if isinstance(slot_result, ToolResult):
-                return slot_result
-            start_time, end_time = slot_result
+        slot_result = self._session.validate_and_resolve_slot(start_time, end_time)
+        if isinstance(slot_result, ToolResult):
+            return slot_result
+        start_time, end_time = slot_result
 
         try:
             appt = AppointmentService.create_appointment(
@@ -198,47 +186,19 @@ class ReceptionistToolsImpl:
                 duration,
             )
 
-        if self._voice:
-            formatted_slots = VoiceSessionState.format_slots(slots, tz)
-            slot_msg = f"Found {len(formatted_slots)} available slots on {resolved_date}"
-            slot_msg += self._voice.record_availability(formatted_slots)
-            next_formatted: list[dict] = []
-            if not formatted_slots and next_date and next_slots_raw:
-                next_formatted = VoiceSessionState.format_slots(next_slots_raw, tz)
-                slot_msg += (
-                    f" No openings on {resolved_date}. "
-                    f"Next availability is {next_date.isoformat()} with {len(next_formatted)} slots — "
-                    "offer those times. Do NOT transfer_call just because the requested day is full."
-                )
-        else:
-            formatted_slots = [
-                {
-                    "start_time": s["start_time"].astimezone(tz).isoformat(),
-                    "end_time": s["end_time"].astimezone(tz).isoformat(),
-                    "start_time_utc": s["start_time"].isoformat(),
-                    "end_time_utc": s["end_time"].isoformat(),
-                }
-                for s in slots
-            ]
+        formatted_slots = VoiceSessionState.format_slots(slots, tz)
+        slot_msg = f"Found {len(formatted_slots)} available slots on {resolved_date}"
+        slot_msg += self._session.record_availability(formatted_slots, voice=self.voice_mode)
+        next_formatted: list[dict] = []
+        if not formatted_slots and next_date and next_slots_raw:
+            next_formatted = VoiceSessionState.format_slots(next_slots_raw, tz)
+            self._session.offered_slots = next_formatted
             self._session.availability_checked = True
-            self._availability_checked_this_turn = True
-            slot_msg = f"Found {len(formatted_slots)} available slots on {resolved_date}"
-            next_formatted = []
-            if not formatted_slots and next_date and next_slots_raw:
-                next_formatted = [
-                    {
-                        "start_time": s["start_time"].astimezone(tz).isoformat(),
-                        "end_time": s["end_time"].astimezone(tz).isoformat(),
-                        "start_time_utc": s["start_time"].isoformat(),
-                        "end_time_utc": s["end_time"].isoformat(),
-                    }
-                    for s in next_slots_raw
-                ]
-                slot_msg = (
-                    f"No openings on {resolved_date}. "
-                    f"Next availability is {next_date.isoformat()} ({len(next_formatted)} slots in next_slots). "
-                    "Offer 2–3 times from next_slots. Do NOT transfer_call solely because the requested day is full."
-                )
+            slot_msg += (
+                f" No openings on {resolved_date}. "
+                f"Next availability is {next_date.isoformat()} with {len(next_formatted)} slots — "
+                "offer those times. Do NOT transfer_call just because the requested day is full."
+            )
 
         data: dict = {
             "date": resolved_date,
@@ -265,6 +225,15 @@ class ReceptionistToolsImpl:
         email: str | None = None,
         address: str | None = None,
     ) -> ToolResult:
+        if not self.voice_mode and self.user_turn_count < 2:
+            return ToolResult(
+                success=False,
+                data={},
+                message=(
+                    "Cannot save customer yet. Greet them and ask for their full name first — "
+                    "one question per message."
+                ),
+            )
         if not is_valid_customer_name(name):
             return ToolResult(
                 success=False,
@@ -311,10 +280,7 @@ class ReceptionistToolsImpl:
                         "Ask the caller for both, then call create_customer again."
                     ),
                 )
-            if self._voice:
-                self._voice.mark_intake_saved(existing.id, existing.address, existing.name)
-            else:
-                self._session.note_customer(existing.id, existing.address, existing.name)
+            self._session.mark_intake_saved(existing.id, existing.address, existing.name)
             return ToolResult(
                 success=True,
                 data={
@@ -333,10 +299,7 @@ class ReceptionistToolsImpl:
                 self.business_id,
                 CustomerCreate(name=name.strip(), phone=phone, email=email, address=address.strip()),
             )
-            if self._voice:
-                self._voice.mark_intake_saved(customer.id, customer.address, customer.name)
-            else:
-                self._session.note_customer(customer.id, customer.address, customer.name)
+            self._session.mark_intake_saved(customer.id, customer.address, customer.name)
             return ToolResult(
                 success=True,
                 data={
@@ -353,6 +316,16 @@ class ReceptionistToolsImpl:
 
     async def send_sms(self, phone: str, message: str) -> ToolResult:
         from app.config import get_settings
+
+        if self._session.sms_sent_this_call:
+            return ToolResult(
+                success=False,
+                data={},
+                message=(
+                    "Confirmation SMS was already sent. Do not send again — "
+                    "reply briefly and end the conversation."
+                ),
+            )
 
         settings = get_settings()
         if self.call_log_id and not settings.telnyx_messaging_profile_id:
@@ -371,6 +344,8 @@ class ReceptionistToolsImpl:
             )
 
         result = self.notifications.send_sms(phone, message)
+        if result.get("sent"):
+            self._session.sms_sent_this_call = True
         return ToolResult(
             success=result["sent"],
             data=result,
