@@ -57,7 +57,11 @@ async def validate_telnyx_webhook(request: Request) -> dict[str, str]:
     signature = request.headers.get("telnyx-signature-ed25519", "")
 
     if signature and timestamp and settings.telnyx_public_key:
-        if not _verify_ed25519_signature(body, timestamp, signature, settings.telnyx_public_key):
+        # TeXML GET callbacks sign the query string; POST signs the form body.
+        payload = body
+        if request.method == "GET" and not body:
+            payload = request.url.query.encode("utf-8")
+        if not _verify_ed25519_signature(payload, timestamp, signature, settings.telnyx_public_key):
             logger.warning("Invalid Telnyx webhook signature")
             if not settings.debug:
                 raise HTTPException(

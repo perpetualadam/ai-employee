@@ -10,7 +10,9 @@ from app.config import get_settings
 from app.models import Business, CallLog
 from app.models.enums import CallDirection, CallStatus
 from app.services.tenant import is_valid_uuid
-from app.voice.stt.gather_stt import GatherSpeechSTT
+from app.domain.call import call_has_booking
+from app.domain.phone import normalize_phone
+from app.voice.conversation import is_closing_acknowledgment, is_farewell
 from app.voice.texml_builder import (
     build_greeting,
     build_hangup,
@@ -20,19 +22,6 @@ from app.voice.texml_builder import (
 from app.voice.tts.texml_tts import TeXMLSayTTS
 
 logger = logging.getLogger(__name__)
-
-
-def normalize_phone(phone: str) -> str:
-    """Strip to digits and leading + for comparison."""
-    cleaned = phone.strip()
-    digits = "".join(c for c in cleaned if c.isdigit())
-    if cleaned.startswith("+"):
-        return f"+{digits}"
-    if len(digits) == 10:
-        return f"+1{digits}"
-    if len(digits) == 11 and digits.startswith("1"):
-        return f"+{digits}"
-    return cleaned
 
 
 def find_business_by_phone(db: Session, to_number: str) -> Business | None:
@@ -99,6 +88,21 @@ async def process_speech_turn(
             False,
         )
 
+    if call_has_booking(call_log.summary) and (
+        is_farewell(speech_text) or is_closing_acknowledgment(speech_text)
+    ):
+        call_log.status = CallStatus.COMPLETED
+        db.commit()
+        return (
+            build_hangup("You're welcome! Thank you for calling. Goodbye!"),
+            False,
+        )
+
+    if is_farewell(speech_text):
+        call_log.status = CallStatus.COMPLETED
+        db.commit()
+        return (build_hangup("Thank you for calling. Goodbye!"), False)
+
     call_id = call_log.id
     try:
         agent = ReceptionistAgent(db, business, get_ai_provider(), call_log_id=call_id)
@@ -114,7 +118,14 @@ async def process_speech_turn(
     reply = TeXMLSayTTS.prepare_for_speech(result["reply"])
     db.refresh(call_log)
     call_log.escalated = result["escalated"]
+    if "book_appointment" in result.get("tools_used", []):
+        call_log.summary = "Appointment booked on voice call"
     db.commit()
+
+    if call_has_booking(call_log.summary) and is_farewell(speech_text):
+        call_log.status = CallStatus.COMPLETED
+        db.commit()
+        return (build_hangup(f"{reply} Goodbye!"), False)
 
     if result["escalated"]:
         escalation = business.escalation_phone or business.phone_number
@@ -133,6 +144,27 @@ async def process_speech_turn(
 def handle_inbound_call(db: Session, call_sid: str, from_number: str, to_number: str) -> str:
     """Create call record and return initial TeXML greeting."""
     settings = get_settings()
+
+    existing = (
+        db.query(CallLog)
+        .filter(
+            CallLog.external_call_id == call_sid,
+            CallLog.status == CallStatus.IN_PROGRESS,
+        )
+        .order_by(CallLog.created_at.desc())
+        .first()
+    )
+    if existing:
+        logger.info(
+            "Resuming in-progress call",
+            extra={"call_log_id": existing.id, "call_sid": call_sid},
+        )
+        return build_say_and_gather(
+            "Sorry about that. After the tone, please continue.",
+            settings.public_api_url,
+            existing.id,
+        )
+
     business = find_business_by_phone(db, to_number)
 
     if business is None:
@@ -154,37 +186,6 @@ def handle_inbound_call(db: Session, call_sid: str, from_number: str, to_number:
 
     call = create_voice_call(db, business, call_sid, from_number)
     return build_greeting(business.name, settings.public_api_url, call.id)
-
-
-async def handle_gather_result(
-    db: Session,
-    call_log_id: str,
-    speech_result: str | None,
-    confidence: str | None = None,
-) -> str:
-    """Process Gather speech result and return next TeXML."""
-    call_log = get_call_log(db, call_log_id)
-    if call_log is None:
-        return build_hangup("Sorry, this session has expired. Goodbye.")
-
-    business = db.query(Business).filter(Business.id == call_log.business_id).first()
-    if business is None:
-        return build_hangup("Sorry, this business is not available. Goodbye.")
-
-    if GatherSpeechSTT.is_empty(speech_result):
-        settings = get_settings()
-        return build_say_and_gather(
-            "I'm sorry, I didn't catch that. Could you please repeat?",
-            settings.public_api_url,
-            call_log.id,
-        )
-
-    chunk = GatherSpeechSTT.from_speech_result(
-        speech_result or "",
-        float(confidence) if confidence else None,
-    )
-    texml, _ = await process_speech_turn(db, call_log, business, chunk.text)
-    return texml
 
 
 def handle_call_status(

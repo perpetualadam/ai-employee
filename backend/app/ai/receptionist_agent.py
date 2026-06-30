@@ -44,10 +44,20 @@ class ReceptionistAgent:
         )
         self.tool_defs = tool_definitions_from_schemas(RECEPTIONIST_TOOL_DEFINITIONS)
 
-    def _build_system_message(self) -> AIMessage:
+    def _build_system_message(self, *, caller_phone: str | None = None, voice_mode: bool = False) -> AIMessage:
         services = BusinessServiceManager.list_services(self.db, self.business.id)
         rules = BusinessServiceManager.list_emergency_rules(self.db, self.business.id)
-        prompt = build_receptionist_prompt(self.business, services, rules)
+        if caller_phone is None and self.call_log_id:
+            call = self.db.query(CallLog).filter(CallLog.id == self.call_log_id).first()
+            if call and call.caller_phone:
+                caller_phone = call.caller_phone
+        prompt = build_receptionist_prompt(
+            self.business,
+            services,
+            rules,
+            caller_phone=caller_phone,
+            voice_mode=voice_mode,
+        )
         return AIMessage(role="system", content=prompt)
 
     def _log_activity(
@@ -76,7 +86,9 @@ class ReceptionistAgent:
         *,
         voice_mode: bool = False,
     ) -> dict:
-        messages: list[AIMessage] = [self._build_system_message()]
+        self._voice_mode = voice_mode
+        self.tools_impl.voice_mode = voice_mode
+        messages: list[AIMessage] = [self._build_system_message(voice_mode=voice_mode)]
 
         for entry in history:
             if entry["role"] in ("user", "assistant"):
@@ -90,7 +102,7 @@ class ReceptionistAgent:
             response = await self.provider.chat(messages, tools=self.tool_defs)
 
             if not response.tool_calls:
-                reply = response.content or "I'm sorry, I couldn't process that. How can I help you?"
+                reply = response.content or "I'm sorry, I didn't catch that. Could you repeat that?"
                 self._save_conversation_turn(user_message, history, reply, voice_mode=voice_mode)
                 return {
                     "reply": reply,

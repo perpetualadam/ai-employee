@@ -1,18 +1,23 @@
 """Concrete AI receptionist tools backed by CRM and calendar services."""
 
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
+from app.ai.conversation_state import ConversationState
 from app.ai.date_utils import business_now, resolve_target_date
 from app.ai.tools import ToolResult
+from app.domain.intake import is_valid_customer_name, is_valid_service_address
+from app.domain.phone import is_plausible_phone, normalize_phone, resolve_caller_phone
 from app.models import Business
 from app.schemas import AppointmentCreate, CustomerCreate, CustomerUpdate
 from app.services.appointment_service import AppointmentService
 from app.services.customer_service import CustomerService
 from app.services.notification_service import NotificationService
+from app.voice.session_state import VoiceSessionState
+from app.voice.slots import parse_datetime_utc
 
 logger = logging.getLogger(__name__)
 
@@ -26,43 +31,35 @@ class ReceptionistToolsImpl:
         business: Business,
         notification_service: NotificationService,
         call_log_id: str | None = None,
+        voice_mode: bool = False,
     ):
         self.db = db
         self.business = business
         self.business_id = business.id
         self.notifications = notification_service
         self.call_log_id = call_log_id
+        self.voice_mode = voice_mode
         self.escalated = False
-        self._verified_customer_id: str | None = None
-        self._address_collected = False
-        self._availability_checked = False
-
-    @staticmethod
-    def _has_address(address: str | None) -> bool:
-        return bool(address and address.strip())
-
-    def _note_customer(self, customer_id: str, address: str | None) -> None:
-        self._verified_customer_id = customer_id
-        if self._has_address(address):
-            self._address_collected = True
-
-    def _require_customer_and_address(self, action: str) -> ToolResult | None:
-        if self._verified_customer_id is None:
-            return ToolResult(
-                success=False,
-                data={},
-                message=f"Cannot {action} yet. Call lookup_customer or create_customer first.",
+        self._availability_checked_this_turn = False
+        if voice_mode:
+            self._session: ConversationState | VoiceSessionState = VoiceSessionState.load(
+                db, business.id, call_log_id
             )
-        if not self._address_collected:
-            return ToolResult(
-                success=False,
-                data={},
-                message=(
-                    f"Cannot {action} yet. Ask for the service address and save it "
-                    "via create_customer before checking availability or booking."
-                ),
-            )
-        return None
+        else:
+            self._session = ConversationState.load_from_call(db, business.id, call_log_id)
+
+    @property
+    def _voice(self) -> VoiceSessionState | None:
+        return self._session if self.voice_mode else None
+
+    def _require_intake(self, action: str) -> ToolResult | None:
+        if self._voice:
+            return self._voice.require_intake(action)
+        return self._session.require_customer_intake(action)
+
+    def _resolve_phone(self, phone: str) -> str:
+        resolved = resolve_caller_phone(phone, self._session.caller_phone)
+        return resolved or normalize_phone(phone)
 
     async def book_appointment(
         self,
@@ -72,30 +69,45 @@ class ReceptionistToolsImpl:
         end_time: datetime,
         notes: str | None = None,
     ) -> ToolResult:
-        if self._verified_customer_id is None:
+        intake_block = self._require_intake("book")
+        if intake_block:
+            return intake_block
+
+        if self._voice:
+            same_turn = self._voice.block_same_turn_booking()
+            if same_turn:
+                return same_turn
+
+        if customer_id != self._session.verified_customer_id:
             return ToolResult(
                 success=False,
-                data={},
-                message="Cannot book yet. Call lookup_customer or create_customer first.",
-            )
-        if customer_id != self._verified_customer_id:
-            return ToolResult(
-                success=False,
-                data={"customer_id": self._verified_customer_id},
+                data={"customer_id": self._session.verified_customer_id},
                 message=(
-                    f"Use customer_id {self._verified_customer_id} from lookup/create — "
+                    f"Use customer_id {self._session.verified_customer_id} from lookup/create — "
                     "do not invent a customer_id."
                 ),
             )
-        if not self._availability_checked:
+        if not self._session.availability_checked:
             return ToolResult(
                 success=False,
                 data={},
                 message="Cannot book yet. Call check_availability for the requested date first.",
             )
-        address_block = self._require_customer_and_address("book")
-        if address_block:
-            return address_block
+        if self._session.booking_complete:
+            return ToolResult(
+                success=False,
+                data={},
+                message=(
+                    "An appointment is already booked on this call. "
+                    "Confirm the existing booking to the caller and end the conversation — do not book again."
+                ),
+            )
+
+        if self._voice:
+            slot_result = self._voice.validate_and_resolve_slot(start_time, end_time)
+            if isinstance(slot_result, ToolResult):
+                return slot_result
+            start_time, end_time = slot_result
 
         try:
             appt = AppointmentService.create_appointment(
@@ -109,15 +121,37 @@ class ReceptionistToolsImpl:
                     notes=notes,
                 ),
             )
+            self._session.booking_complete = True
+            if self.call_log_id:
+                from app.models import CallLog
+
+                call = (
+                    self.db.query(CallLog)
+                    .filter(CallLog.id == self.call_log_id, CallLog.business_id == self.business_id)
+                    .first()
+                )
+                if call:
+                    call.summary = "Appointment booked on voice call"
+                    self.db.commit()
+
+            tz = ZoneInfo(self.business.timezone)
+            local_start = appt.start_time.astimezone(tz)
+            local_label = local_start.strftime("%A %B %-d at %-I:%M %p").replace("  ", " ")
+
             return ToolResult(
                 success=True,
                 data={
                     "appointment_id": appt.id,
                     "start_time": appt.start_time.isoformat(),
                     "end_time": appt.end_time.isoformat(),
+                    "local_time": local_start.isoformat(),
+                    "local_time_spoken": f"{local_label} {self.business.timezone}",
                     "status": appt.status.value,
                 },
-                message=f"Appointment booked for {service_type}",
+                message=(
+                    f"Appointment booked for {service_type} at {local_label} "
+                    f"({self.business.timezone}). Tell the caller this exact local time."
+                ),
             )
         except ValueError as exc:
             return ToolResult(success=False, data={}, message=str(exc))
@@ -127,9 +161,9 @@ class ReceptionistToolsImpl:
         target_date: str,
         service_type: str | None = None,
     ) -> ToolResult:
-        address_block = self._require_customer_and_address("check availability")
-        if address_block:
-            return address_block
+        intake_block = self._require_intake("check availability")
+        if intake_block:
+            return intake_block
 
         parsed_date = resolve_target_date(target_date, self.business.timezone)
         if parsed_date is None:
@@ -151,19 +185,25 @@ class ReceptionistToolsImpl:
         slots = AppointmentService.get_availability(self.db, self.business, parsed_date, duration)
         tz = ZoneInfo(self.business.timezone)
         now = business_now(self.business.timezone)
-
-        formatted_slots = [
-            {
-                "start_time": s["start_time"].astimezone(tz).isoformat(),
-                "end_time": s["end_time"].astimezone(tz).isoformat(),
-                "start_time_utc": s["start_time"].isoformat(),
-                "end_time_utc": s["end_time"].isoformat(),
-            }
-            for s in slots
-        ]
-
-        self._availability_checked = True
         resolved_date = parsed_date.isoformat()
+
+        if self._voice:
+            formatted_slots = VoiceSessionState.format_slots(slots, tz)
+            slot_msg = f"Found {len(formatted_slots)} available slots on {resolved_date}"
+            slot_msg += self._voice.record_availability(formatted_slots)
+        else:
+            formatted_slots = [
+                {
+                    "start_time": s["start_time"].astimezone(tz).isoformat(),
+                    "end_time": s["end_time"].astimezone(tz).isoformat(),
+                    "start_time_utc": s["start_time"].isoformat(),
+                    "end_time_utc": s["end_time"].isoformat(),
+                }
+                for s in slots
+            ]
+            self._session.availability_checked = True
+            self._availability_checked_this_turn = True
+            slot_msg = f"Found {len(formatted_slots)} available slots on {resolved_date}"
 
         return ToolResult(
             success=True,
@@ -175,7 +215,7 @@ class ReceptionistToolsImpl:
                 "slots": formatted_slots,
                 "count": len(formatted_slots),
             },
-            message=f"Found {len(formatted_slots)} available slots on {resolved_date}",
+            message=slot_msg,
         )
 
     async def create_customer(
@@ -185,22 +225,56 @@ class ReceptionistToolsImpl:
         email: str | None = None,
         address: str | None = None,
     ) -> ToolResult:
-        if not self._has_address(address):
+        if not is_valid_customer_name(name):
             return ToolResult(
                 success=False,
                 data={},
-                message="Address is required. Ask the caller for their service address first.",
+                message="Ask the caller for their full name first — do not guess or use a placeholder.",
+            )
+        if not is_valid_service_address(address):
+            return ToolResult(
+                success=False,
+                data={},
+                message=(
+                    "Address is required. Ask for the full street address including "
+                    "street number — a city or state alone is not enough."
+                ),
+            )
+
+        phone = self._resolve_phone(phone)
+        if not is_plausible_phone(phone):
+            return ToolResult(
+                success=False,
+                data={},
+                message="Valid phone required. Use the caller ID phone from the system prompt.",
             )
 
         existing = CustomerService.lookup_by_phone(self.db, self.business_id, phone)
         if existing:
-            if not self._has_address(existing.address):
+            update_data: dict[str, str] = {}
+            if not is_valid_service_address(existing.address):
+                update_data["address"] = address.strip()
+            if not is_valid_customer_name(existing.name):
+                update_data["name"] = name.strip()
+            if update_data:
                 existing = CustomerService.update_customer(
                     self.db,
                     existing,
-                    CustomerUpdate(address=address.strip()),
+                    CustomerUpdate(**update_data),
                 )
-            self._note_customer(existing.id, existing.address)
+            if not is_valid_customer_name(existing.name) or not is_valid_service_address(existing.address):
+                return ToolResult(
+                    success=False,
+                    data={},
+                    message=(
+                        "Customer record still missing a valid name or address. "
+                        "Ask the caller for both, then call create_customer again."
+                    ),
+                )
+            if self._voice:
+                self._voice.mark_intake_saved(existing.id, existing.address, existing.name)
+            else:
+                self._session.note_customer(existing.id, existing.address, existing.name)
             return ToolResult(
                 success=True,
                 data={
@@ -210,16 +284,19 @@ class ReceptionistToolsImpl:
                     "address": existing.address,
                     "already_exists": True,
                 },
-                message=f"Customer on file: {existing.name}",
+                message=f"Customer saved: {existing.name} at {existing.address}",
             )
 
         try:
             customer = CustomerService.create_customer(
                 self.db,
                 self.business_id,
-                CustomerCreate(name=name, phone=phone, email=email, address=address.strip()),
+                CustomerCreate(name=name.strip(), phone=phone, email=email, address=address.strip()),
             )
-            self._note_customer(customer.id, customer.address)
+            if self._voice:
+                self._voice.mark_intake_saved(customer.id, customer.address, customer.name)
+            else:
+                self._session.note_customer(customer.id, customer.address, customer.name)
             return ToolResult(
                 success=True,
                 data={
@@ -235,6 +312,24 @@ class ReceptionistToolsImpl:
             return ToolResult(success=False, data={}, message=str(exc))
 
     async def send_sms(self, phone: str, message: str) -> ToolResult:
+        from app.config import get_settings
+
+        settings = get_settings()
+        if self.call_log_id and not settings.telnyx_messaging_profile_id:
+            return ToolResult(
+                success=True,
+                data={"sent": False, "skipped": True, "reason": "SMS not configured for voice calls"},
+                message="SMS skipped — confirm the appointment verbally to the caller instead.",
+            )
+
+        phone = self._resolve_phone(phone)
+        if not is_plausible_phone(phone):
+            return ToolResult(
+                success=False,
+                data={},
+                message="Cannot send SMS — use the caller ID phone number.",
+            )
+
         result = self.notifications.send_sms(phone, message)
         return ToolResult(
             success=result["sent"],
@@ -279,15 +374,43 @@ class ReceptionistToolsImpl:
         )
 
     async def lookup_customer(self, phone: str) -> ToolResult:
+        phone = self._resolve_phone(phone)
         customer = CustomerService.lookup_by_phone(self.db, self.business_id, phone)
         if customer is None:
             return ToolResult(
                 success=True,
                 data={"found": False},
-                message="No customer found with that phone number",
+                message=(
+                    "No customer found with that phone number. "
+                    "Ask for their full name and service address, then call create_customer."
+                ),
             )
-        self._note_customer(customer.id, customer.address)
-        if not self._address_collected:
+
+        has_valid_name = is_valid_customer_name(customer.name)
+        has_valid_address = is_valid_service_address(customer.address)
+
+        if self.voice_mode:
+            return ToolResult(
+                success=True,
+                data={
+                    "found": True,
+                    "customer_id": customer.id,
+                    "name": customer.name,
+                    "phone": customer.phone,
+                    "email": customer.email,
+                    "address": customer.address,
+                    "name_on_file": has_valid_name,
+                    "address_on_file": has_valid_address,
+                },
+                message=(
+                    f"Phone matches {customer.name if has_valid_name else 'a customer on file'}. "
+                    "On phone calls you must still ask for their full name and service address, "
+                    "then call create_customer with what they tell you — do not skip to booking."
+                ),
+            )
+
+        self._session.note_customer(customer.id, customer.address, customer.name)
+        if not has_valid_address:
             return ToolResult(
                 success=True,
                 data={
@@ -320,11 +443,13 @@ class ReceptionistToolsImpl:
     async def dispatch(self, tool_name: str, arguments: dict) -> ToolResult:
         """Route a tool call to the correct handler."""
         if tool_name == "book_appointment":
+            start_raw = arguments.get("start_time_utc") or arguments.get("start_time")
+            end_raw = arguments.get("end_time_utc") or arguments.get("end_time")
             return await self.book_appointment(
                 customer_id=arguments["customer_id"],
                 service_type=arguments["service_type"],
-                start_time=_parse_datetime(arguments["start_time"]),
-                end_time=_parse_datetime(arguments["end_time"]),
+                start_time=parse_datetime_utc(start_raw),
+                end_time=parse_datetime_utc(end_raw),
                 notes=arguments.get("notes"),
             )
         if tool_name == "check_availability":
@@ -350,10 +475,3 @@ class ReceptionistToolsImpl:
             return await self.lookup_customer(phone=arguments["phone"])
 
         return ToolResult(success=False, data={}, message=f"Unknown tool: {tool_name}")
-
-
-def _parse_datetime(value: str) -> datetime:
-    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=UTC)
-    return dt.astimezone(UTC)

@@ -20,6 +20,7 @@ class TranscriptChunk:
     text: str
     is_final: bool
     speaker: str  # caller | assistant
+    confidence: float | None = None
 
 
 class SpeechToTextProvider(ABC):

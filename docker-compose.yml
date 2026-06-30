@@ -19,6 +19,8 @@ services:
     build: ./backend
     ports:
       - "8000:8000"
+    volumes:
+      - ./backend:/app
     environment:
       DATABASE_URL: postgresql://aiemployee:aiemployee@db:5432/aiemployee
       SECRET_KEY: dev-secret-change-in-production

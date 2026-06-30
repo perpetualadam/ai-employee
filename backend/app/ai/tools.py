@@ -73,15 +73,23 @@ RECEPTIONIST_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "name": "book_appointment",
             "description": (
                 "Book an appointment for a customer. "
-                "Requires lookup/create customer and check_availability first."
+                "Requires lookup/create customer and check_availability first. "
+                "You MUST copy start_time and end_time exactly from start_time_utc "
+                "and end_time_utc of the slot the caller chose — do not invent times."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "customer_id": {"type": "string"},
                     "service_type": {"type": "string"},
-                    "start_time": {"type": "string", "description": "ISO 8601 datetime"},
-                    "end_time": {"type": "string", "description": "ISO 8601 datetime"},
+                    "start_time": {
+                        "type": "string",
+                        "description": "Exact start_time_utc from the chosen check_availability slot (ISO 8601 UTC)",
+                    },
+                    "end_time": {
+                        "type": "string",
+                        "description": "Exact end_time_utc from the chosen check_availability slot (ISO 8601 UTC)",
+                    },
                     "notes": {"type": "string"},
                 },
                 "required": ["customer_id", "service_type", "start_time", "end_time"],
