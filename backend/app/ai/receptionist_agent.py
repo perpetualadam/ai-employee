@@ -108,6 +108,7 @@ class ReceptionistAgent:
                     "reply": reply,
                     "tools_used": tools_used,
                     "escalated": self.tools_impl.escalated,
+                    "owner_notified": self.tools_impl.owner_notified,
                 }
 
             # Assistant message requesting tool calls
@@ -173,10 +174,33 @@ class ReceptionistAgent:
                     )
                 )
 
+        caller_phone = None
+        if self.call_log_id:
+            call = self.db.query(CallLog).filter(CallLog.id == self.call_log_id).first()
+            if call:
+                caller_phone = call.caller_phone
+
+        if not self.tools_impl.escalated:
+            self.tools_impl.escalated = True
+            if not self._voice_mode:
+                self.tools_impl.owner_notified = self.tools_impl.notifications.notify_owner_escalation(
+                    "The AI could not finish handling this request automatically.",
+                    caller_phone,
+                )
+
+        if self._voice_mode:
+            reply = "Please hold — I'm connecting you with someone who can help."
+        else:
+            reply = (
+                "Thanks for your patience. I've passed this to our team — "
+                "someone will call you back shortly."
+            )
+
         return {
-            "reply": "I need a moment — let me connect you with someone who can help.",
+            "reply": reply,
             "tools_used": tools_used,
             "escalated": True,
+            "owner_notified": self.tools_impl.owner_notified,
         }
 
     def _save_conversation_turn(

@@ -286,6 +286,7 @@ export interface ChatResponse {
   session_id: string;
   tools_used: string[];
   escalated: boolean;
+  owner_notified: boolean;
 }
 
 export interface OnboardingStep {

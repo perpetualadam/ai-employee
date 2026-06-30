@@ -305,6 +305,7 @@ class ChatResponse(BaseModel):
     session_id: str
     tools_used: list[str]
     escalated: bool
+    owner_notified: bool = False
 
 
 # ── Onboarding ────────────────────────────────────────────────────────────────

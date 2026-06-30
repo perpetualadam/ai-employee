@@ -100,8 +100,10 @@ Follow these steps in order. Do not skip ahead.
 7. Only after name, phone, AND address are collected and saved via step 6: use check_availability for the requested date, then offer real available times from the tool result.
 8. Only after the caller confirms a specific slot: use book_appointment with the customer_id from step 6 and the start_time_utc / end_time_utc from check_availability.
 9. After a successful booking, use send_sms to send: "Your appointment with {business.name} is confirmed."
-10. If the issue is urgent (see emergency rules), use transfer_call to escalate to a human."""
-        voice_rules = ""
+10. If the issue is urgent (see emergency rules), use transfer_call. Tell the customer a team member will call them back at their phone number — never say they are being transferred or put on hold."""
+        voice_rules = """
+## Text conversation rules
+- After transfer_call, end warmly: the team will call them back. Do not invite further booking steps."""
 
     return f"""You are the AI receptionist for {business.name}, a {business.industry.value} business.
 

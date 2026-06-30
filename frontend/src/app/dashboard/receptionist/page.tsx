@@ -28,6 +28,7 @@ export default function ReceptionistPage() {
   const [error, setError] = useState("");
   const [lastTools, setLastTools] = useState<string[]>([]);
   const [escalated, setEscalated] = useState(false);
+  const [ownerNotified, setOwnerNotified] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   async function handleSend() {
@@ -53,6 +54,7 @@ export default function ReceptionistPage() {
       setSessionId(response.session_id);
       setLastTools(response.tools_used);
       setEscalated(response.escalated);
+      setOwnerNotified(response.owner_notified);
       setMessages([...nextMessages, { role: "assistant", content: response.reply }]);
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
     } catch (err) {
@@ -68,6 +70,7 @@ export default function ReceptionistPage() {
     setSessionId(null);
     setLastTools([]);
     setEscalated(false);
+    setOwnerNotified(false);
     setError("");
   }
 
@@ -93,7 +96,7 @@ export default function ReceptionistPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">AI Receptionist</h1>
             <p className="text-muted-foreground">
-              Test your receptionist — simulates a customer conversation
+              Preview how customers experience your receptionist
             </p>
           </div>
           <Button variant="outline" onClick={handleNewSession}>
@@ -106,7 +109,7 @@ export default function ReceptionistPage() {
             <CardHeader>
               <CardTitle>Conversation</CardTitle>
               <CardDescription>
-                {sessionId ? `Session: ${sessionId.slice(0, 8)}...` : "Start a new session"}
+                {sessionId ? "In progress" : "Play the role of a customer calling your business"}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -143,7 +146,11 @@ export default function ReceptionistPage() {
                     {sending && (
                       <div className="flex justify-start">
                         <div className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
-                          Thinking...
+                          <span className="inline-flex gap-1">
+                            <span className="animate-pulse">•</span>
+                            <span className="animate-pulse [animation-delay:150ms]">•</span>
+                            <span className="animate-pulse [animation-delay:300ms]">•</span>
+                          </span>
                         </div>
                       </div>
                     )}
@@ -166,11 +173,7 @@ export default function ReceptionistPage() {
                 </Button>
               </div>
 
-              {escalated && (
-                <p className="text-sm text-amber-600">
-                  Conversation escalated to a human. Start a new session to continue testing.
-                </p>
-              )}
+
               {error && <p className="text-sm text-destructive">{error}</p>}
             </CardContent>
           </Card>
@@ -178,8 +181,8 @@ export default function ReceptionistPage() {
           <div className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Simulate caller</CardTitle>
-                <CardDescription>Optional test phone number</CardDescription>
+                <CardTitle>Caller ID</CardTitle>
+                <CardDescription>Set before the first message</CardDescription>
               </CardHeader>
               <CardContent>
                 <Input
@@ -193,32 +196,40 @@ export default function ReceptionistPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>AI activity</CardTitle>
-                <CardDescription>Tools used in last response</CardDescription>
+                <CardTitle>Behind the scenes</CardTitle>
+                <CardDescription>Owner view — not shown to customers</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-3 text-sm">
                 {lastTools.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No tools used yet.</p>
+                  <p className="text-muted-foreground">No tools used yet.</p>
                 ) : (
                   <div className="flex flex-wrap gap-2">
-                    {lastTools.map((tool) => (
-                      <Badge key={tool} variant="secondary">
+                    {lastTools.map((tool, index) => (
+                      <Badge key={`${tool}-${index}`} variant="secondary">
                         {tool}
                       </Badge>
                     ))}
                   </div>
+                )}
+                {escalated && (
+                  <p className="text-muted-foreground">
+                    Conversation ended — the customer was told your team will follow up.
+                    {ownerNotified
+                      ? " Your escalation phone was texted."
+                      : " Add an escalation phone in Settings to get text alerts."}
+                  </p>
                 )}
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader>
-                <CardTitle>Tips</CardTitle>
+                <CardTitle>What to try</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 text-sm text-muted-foreground">
-                <p>The AI will ask for name, phone, address, and reason for calling.</p>
-                <p>It uses real CRM and calendar tools — bookings appear in your dashboard.</p>
-                <p>Requires GROQ_API_KEY on the backend.</p>
+                <p>The receptionist will ask for name, phone, address, and what you need.</p>
+                <p>Bookings use your real calendar and appear on the dashboard.</p>
+                <p>For emergencies, say you need to speak to someone right away.</p>
               </CardContent>
             </Card>
           </div>

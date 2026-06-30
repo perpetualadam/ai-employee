@@ -55,3 +55,26 @@ class NotificationService:
             extra={"to": email, "subject": subject, "business_id": self.business.id},
         )
         return {"sent": True, "provider": "dev_log", "email": email, "subject": subject}
+
+    def notify_owner_escalation(self, reason: str, caller_phone: str | None) -> bool:
+        """Text the business owner when the AI escalates (chat or failed auto-handling)."""
+        owner_phone = self.business.escalation_phone or self.business.phone_number
+        if not owner_phone:
+            logger.warning(
+                "Escalation with no owner phone configured",
+                extra={"business_id": self.business.id, "reason": reason},
+            )
+            return False
+
+        caller = (caller_phone or "").strip()
+        if not caller or caller in ("text-chat", "unknown"):
+            caller_label = "a customer (no number on file)"
+        else:
+            caller_label = caller
+
+        message = (
+            f"AI Employee ({self.business.name}): {reason} "
+            f"Caller: {caller_label}. Please call them back as soon as you can."
+        )
+        result = self.send_sms(owner_phone, message)
+        return bool(result.get("sent"))

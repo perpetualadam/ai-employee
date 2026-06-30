@@ -40,6 +40,7 @@ class ReceptionistToolsImpl:
         self.call_log_id = call_log_id
         self.voice_mode = voice_mode
         self.escalated = False
+        self.owner_notified = False
         self._availability_checked_this_turn = False
         if voice_mode:
             self._session: ConversationState | VoiceSessionState = VoiceSessionState.load(
@@ -337,8 +338,26 @@ class ReceptionistToolsImpl:
             message="SMS sent" if result["sent"] else "Failed to send SMS",
         )
 
+    def _caller_phone_for_escalation(self) -> str | None:
+        phone = self._session.caller_phone
+        if phone and phone not in ("text-chat", "unknown", ""):
+            return phone
+        if self.call_log_id:
+            from app.models import CallLog
+
+            call = (
+                self.db.query(CallLog)
+                .filter(CallLog.id == self.call_log_id, CallLog.business_id == self.business_id)
+                .first()
+            )
+            if call and call.caller_phone and call.caller_phone not in ("text-chat", "unknown"):
+                return call.caller_phone
+        return None
+
     async def transfer_call(self, call_id: str, reason: str) -> ToolResult:
         self.escalated = True
+        caller_phone = self._caller_phone_for_escalation()
+        live_transfer = False
 
         if self.call_log_id:
             from app.models import CallLog
@@ -362,15 +381,40 @@ class ReceptionistToolsImpl:
                     if escalation and settings.telnyx_api_key:
                         provider = TelnyxVoiceProvider()
                         await provider.transfer_call(call.external_call_id, escalation)
+                        live_transfer = True
+                else:
+                    self.owner_notified = self.notifications.notify_owner_escalation(
+                        reason, caller_phone
+                    )
 
         logger.warning(
             "Call escalated to human",
-            extra={"business_id": self.business_id, "reason": reason},
+            extra={
+                "business_id": self.business_id,
+                "reason": reason,
+                "live_transfer": live_transfer,
+                "owner_notified": self.owner_notified,
+            },
         )
+        if self.voice_mode:
+            tool_message = (
+                "Live transfer in progress. Tell the caller you are connecting them now and to stay on the line."
+            )
+        else:
+            tool_message = (
+                "Owner has been notified to call the customer back. "
+                "Tell the customer a team member will call them back shortly at their phone number. "
+                "Do NOT say they are being transferred, put on hold, or connected live."
+            )
         return ToolResult(
             success=True,
-            data={"escalated": True, "reason": reason},
-            message="Transferring to a team member. Someone will follow up shortly.",
+            data={
+                "escalated": True,
+                "reason": reason,
+                "owner_notified": self.owner_notified,
+                "live_transfer": live_transfer,
+            },
+            message=tool_message,
         )
 
     async def lookup_customer(self, phone: str) -> ToolResult:

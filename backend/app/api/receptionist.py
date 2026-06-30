@@ -65,4 +65,5 @@ async def chat_with_receptionist(
         session_id=session_id,
         tools_used=result["tools_used"],
         escalated=result["escalated"],
+        owner_notified=result.get("owner_notified", False),
     )

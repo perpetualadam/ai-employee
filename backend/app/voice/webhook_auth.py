@@ -26,7 +26,55 @@ def _decode_public_key(raw_key: str) -> VerifyKey:
     return VerifyKey(key_bytes)
 
 
-def _verify_ed25519_signature(payload: bytes, timestamp: str, signature_b64: str, public_key: str) -> bool:
+def _decode_signature_header(signature_header: str) -> bytes:
+    """Accept raw base64 or Standard Webhooks-style `v1a,<sig>` / `v1,<sig>`."""
+    cleaned = signature_header.strip()
+    if "," in cleaned:
+        cleaned = cleaned.split(",", 1)[1]
+    return base64.b64decode(cleaned)
+
+
+def _build_signed_payload(timestamp: str, body: bytes) -> bytes:
+    """
+    Telnyx signs `{timestamp}|{raw_body}`.
+    For TeXML GET callbacks the body is empty, so the signed string is `{timestamp}|`.
+    """
+    return f"{timestamp}|".encode("utf-8") + body
+
+
+def _build_standard_webhooks_payload(msg_id: str, timestamp: str, body: bytes) -> bytes:
+    """Standard Webhooks asymmetric format: `{msg_id}.{timestamp}.{body}`."""
+    body_text = body.decode("utf-8") if body else ""
+    return f"{msg_id}.{timestamp}.{body_text}".encode("utf-8")
+
+
+def _verify_signed_payload(
+    signed_payload: bytes,
+    signature_header: str,
+    public_key: str,
+) -> bool:
+    try:
+        signature = _decode_signature_header(signature_header)
+        verify_key = _decode_public_key(public_key)
+        verify_key.verify(signed_payload, signature)
+    except (BadSignatureError, ValueError):
+        return False
+    return True
+
+
+def verify_telnyx_webhook_signature(
+    body: bytes,
+    timestamp: str,
+    signature_header: str,
+    public_key: str,
+    *,
+    query_string: bytes | None = None,
+    webhook_id: str | None = None,
+) -> bool:
+    """
+    Verify a Telnyx webhook signature against candidate payload formats.
+    Returns True when any supported format matches.
+    """
     try:
         ts = int(timestamp)
     except ValueError:
@@ -35,14 +83,19 @@ def _verify_ed25519_signature(payload: bytes, timestamp: str, signature_b64: str
     if abs(time.time() - ts) > _MAX_WEBHOOK_AGE_SECONDS:
         return False
 
-    signed_payload = f"{timestamp}|{payload.decode('utf-8')}".encode("utf-8")
-    signature = base64.b64decode(signature_b64)
-    verify_key = _decode_public_key(public_key)
-    try:
-        verify_key.verify(signed_payload, signature)
-    except BadSignatureError:
-        return False
-    return True
+    candidates: list[bytes] = [_build_signed_payload(timestamp, body)]
+
+    if webhook_id:
+        candidates.append(_build_standard_webhooks_payload(webhook_id, timestamp, body))
+
+    # Legacy fallback: some integrations documented query signing for GET.
+    if query_string:
+        candidates.append(_build_signed_payload(timestamp, query_string))
+
+    for signed_payload in candidates:
+        if _verify_signed_payload(signed_payload, signature_header, public_key):
+            return True
+    return False
 
 
 async def validate_telnyx_webhook(request: Request) -> dict[str, str]:
@@ -55,14 +108,27 @@ async def validate_telnyx_webhook(request: Request) -> dict[str, str]:
 
     timestamp = request.headers.get("telnyx-timestamp", "")
     signature = request.headers.get("telnyx-signature-ed25519", "")
+    webhook_id = request.headers.get("webhook-id") or request.headers.get("telnyx-webhook-id")
 
     if signature and timestamp and settings.telnyx_public_key:
-        # TeXML GET callbacks sign the query string; POST signs the form body.
-        payload = body
-        if request.method == "GET" and not body:
-            payload = request.url.query.encode("utf-8")
-        if not _verify_ed25519_signature(payload, timestamp, signature, settings.telnyx_public_key):
-            logger.warning("Invalid Telnyx webhook signature")
+        query_bytes = request.url.query.encode("utf-8") if request.url.query else None
+        if not verify_telnyx_webhook_signature(
+            body,
+            timestamp,
+            signature,
+            settings.telnyx_public_key,
+            query_string=query_bytes if request.method == "GET" and not body else None,
+            webhook_id=webhook_id,
+        ):
+            logger.warning(
+                "Invalid Telnyx webhook signature",
+                extra={
+                    "method": request.method,
+                    "path": request.url.path,
+                    "body_len": len(body),
+                    "query_len": len(query_bytes or b""),
+                },
+            )
             if not settings.debug:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
