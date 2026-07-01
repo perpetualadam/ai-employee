@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Overview" },
+  { href: "/dashboard/conversations", label: "Inbox" },
   { href: "/dashboard/receptionist", label: "AI Receptionist" },
   { href: "/dashboard/customers", label: "Customers" },
   { href: "/dashboard/jobs", label: "Jobs" },
@@ -59,7 +60,8 @@ export function DashboardShell({ businessName, children }: DashboardShellProps) 
                 href={item.href}
                 className={cn(
                   "block rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                  pathname === item.href
+                  pathname === item.href ||
+                    (item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`))
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:bg-muted hover:text-foreground",
                 )}

@@ -60,3 +60,11 @@ class SubscriptionStatus(str, enum.Enum):
 class PlanTier(str, enum.Enum):
     STARTER = "starter"
     PRO = "pro"
+
+
+class ConversationChannel(str, enum.Enum):
+    """How the customer reached the AI receptionist."""
+
+    VOICE = "voice"
+    SMS = "sms"
+    WEB_CHAT = "web_chat"

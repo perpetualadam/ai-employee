@@ -1,6 +1,7 @@
 """System prompts for the AI receptionist."""
 
 from app.ai.date_utils import format_date_context
+from app.domain.intake import US_ADDRESS_FORMAT_HINT
 from app.models import Business, BusinessEmergencyRule, BusinessService
 
 
@@ -41,75 +42,143 @@ def build_receptionist_prompt(
     if business.ai_instructions:
         custom = f"\n\nAdditional instructions from the business owner:\n{business.ai_instructions}"
 
-    phone_step = (
-        "3. Ask for their phone number (required for booking) and wait for their answer."
-    )
     caller_context = ""
     has_caller_id = caller_phone and caller_phone not in ("text-chat", "unknown", "")
 
+    address_collect_step = (
+        "4. Collect the full US service address where work is needed. Required: "
+        "house/building number, street name, street type (Street, Avenue, Way, Blvd, etc.), "
+        "optional Apt/Suite/Unit, city, state, and 5-digit ZIP code. "
+        "Ask for any missing part one question at a time."
+    )
+
     if has_caller_id:
-        phone_step = (
-            f"3. Caller ID is {caller_phone}. Do NOT ask them to recite their phone number. "
-            f"Always pass phone=\"{caller_phone}\" to lookup_customer and create_customer. "
-            "Only use a different number if they explicitly give you one."
+        caller_context = (
+            f"\n\n## Caller on the line\n"
+            f"- Phone (caller ID — use this in every lookup/create tool call): {caller_phone}\n"
         )
-        caller_context = f"\n\n## Caller on the line\n- Phone (caller ID — use this in tools): {caller_phone}\n"
+        confirm_intake_step = (
+            "5. Read back the COMPLETE address (number, street, city, state, ZIP). "
+            f'Also read back their phone number as "{caller_phone}" and ask "Is that all correct?" '
+            "Wait for yes/correct before calling create_customer."
+        )
+        create_customer_step = (
+            f'6. Call create_customer with the confirmed name, address, and phone="{caller_phone}". '
+            "Do NOT ask them to recite their phone number unless they give a different one."
+        )
+        availability_start = 7
+    else:
+        confirm_intake_step = (
+            "6. Read back the COMPLETE address (number, street, city, state, ZIP) and the phone "
+            'number they gave you. Ask "Is that all correct?" Wait for yes/correct before '
+            "calling create_customer."
+        )
+        create_customer_step = (
+            "7. Call create_customer with the confirmed name, address, and phone from this conversation."
+        )
+        availability_start = 8
+
+    phone_intake_step = ""
+    if not has_caller_id:
+        phone_intake_step = (
+            "5. Ask for their phone number (required for booking) and wait for their answer. "
+            'Phrase it as a first-time question, e.g. "What\'s the best phone number to reach you at?" '
+            "Never say you didn't receive their number unless they already tried to give one.\n"
+        )
+
+    confirm_booking = (
+        "Confirm the booking aloud using the same spoken_time you offered for that slot "
+        '(e.g. if you offered "11:30 AM", confirm "11:30 AM" — never a different time).'
+    )
+    end_turn = "Do not call any more tools."
+    if not voice_mode:
+        confirm_booking = (
+            "Confirm the booking once. Send one confirmation SMS via send_sms if appropriate."
+        )
+        end_turn = "No more tools."
+
+    post_create_step = (
+        f"{availability_start}. Only after create_customer succeeds: call check_availability for the date they want. "
+        "Offer 2–3 real slots from the tool result, then STOP and wait.\n"
+        f"{availability_start + 1}. Only on a LATER turn, after they clearly confirm ONE specific slot: "
+        "call book_appointment once using that slot's exact start_time_utc and end_time_utc from check_availability.\n"
+        f"{availability_start + 2}. {confirm_booking}\n"
+        f'{availability_start + 3}. Ask "Is there anything else I can help with?" If they say no, thanks, or goodbye — '
+        f"respond briefly and END. {end_turn}\n"
+        f"{availability_start + 4}. If urgent (see emergency rules), use transfer_call."
+    )
+
+    intake_intro = (
+        "Follow these steps in order. Ask ONE question at a time, then stop and listen.\n"
+        "Do NOT call check_availability or book_appointment on the first caller message."
+        if voice_mode
+        else "Follow these steps in order. Ask ONE question at a time, then stop and wait for a reply.\n"
+        "Do NOT call check_availability or book_appointment on the first customer message."
+    )
+    problem_examples = (
+        "e.g. leak, clogged drain, no hot water). Listen carefully — use THEIR words for the service type "
+        "in check_availability and book_appointment."
+        if voice_mode
+        else "e.g. no hot water, leak, clogged drain). Use their words for service_type."
+    )
+    workflow_heading = (
+        "## Your workflow on every phone call"
+        if voice_mode
+        else "## Your workflow on every conversation"
+    )
+
+    workflow = f"""{workflow_heading}
+{intake_intro}
+
+1. Greet the {"caller" if voice_mode else "customer"} warmly as the receptionist for {business.name}.
+2. Ask what they need help with ({problem_examples}
+3. Ask for their full name and wait for their answer.
+{address_collect_step}
+{phone_intake_step}{confirm_intake_step}
+{create_customer_step}
+{post_create_step}"""
 
     if voice_mode:
-        workflow = f"""## Your workflow on every phone call
-Follow these steps in order. Ask ONE question at a time, then stop and listen.
-Do NOT call check_availability or book_appointment on the first caller message.
-
-1. Greet the caller warmly as the receptionist for {business.name}.
-2. Ask what they need help with (e.g. leak, clogged drain, no hot water). Listen carefully — use THEIR words for the service type in check_availability and book_appointment.
-3. Ask for their full name and wait for their answer.
-{phone_step}
-4. Ask for their service address and wait for their answer.
-5. Call create_customer with the name, caller ID phone, and address they just gave you. lookup_customer is optional — it does NOT replace asking for name and address.
-6. Only after create_customer succeeds: call check_availability for the date they want. Offer 2–3 real slots from the tool result, then STOP and listen.
-7. Only on a LATER turn, after they clearly confirm ONE specific slot: call book_appointment once using that slot's exact start_time_utc and end_time_utc from check_availability.
-8. Confirm the booking aloud using the same spoken_time you offered for that slot (e.g. if you offered "11:30 AM", confirm "11:30 AM" — never a different time).
-9. Ask "Is there anything else I can help with?" If they say no, thanks, or goodbye — respond briefly and END. Do not call any more tools.
-10. If urgent (see emergency rules), use transfer_call."""
         voice_rules = """
 ## Phone call rules — critical
+- Speech recognition often mis-hears words (e.g. "leak" as "week"). If the caller says "my name is having a week/leak", treat it as a misheard plumbing problem — ask what they need fixed, not for empathy about their week.
+- Intake order is always: problem → name → address → confirm address & phone → create_customer. Never ask for phone before address.
+- {us_address}
+- NEVER call create_customer until the caller confirmed the read-back of address and phone number.
 - NEVER skip asking for name and service address — even if lookup_customer finds a match.
+- NEVER call lookup_customer before you have collected their full service address.
 - NEVER call create_customer with a guessed or placeholder name or address.
+- NEVER combine partial address fragments the caller said on different turns — wait until they give a complete street address in one answer.
+- If the appointment is already booked and the caller gives their address, call create_customer again to update the address on file.
 - NEVER call check_availability or book_appointment until create_customer has succeeded on this call.
 - NEVER call book_appointment in the same turn you first offered time slots — wait for the caller to pick one.
-- NEVER ask the caller to say their phone number — use caller ID in every lookup/create tool call.
+- NEVER ask the caller to say their phone number when caller ID is available — use it in every lookup/create tool call.
 - NEVER call book_appointment more than once per call. If already booked, do not book again.
 - When offering slots, use ONLY the spoken_time values from check_availability — never invent or round times.
 - When confirming a booking, repeat the exact spoken_time of the slot that was booked.
 - NEVER call send_sms on phone calls — confirmation is spoken only.
+- If you cannot capture a complete US address or the caller prefers typing, call send_web_chat_link and tell them to continue on your website (no SMS required).
+- If send_web_chat_link is not enough for address only, you may call send_address_confirmation_link as a fallback when SMS is configured.
 - Match service_type to what the caller described (e.g. kitchen leak → plumbing repair, not drain cleaning unless they said drain).
 - When quoting appointment times, always say the time in the business timezone ({tz}) with the timezone name.
 - Keep each response to 1–2 short sentences. One question per turn.
 - If the caller says goodbye, thank you, or no further questions — say goodbye and stop. No more tools."""
-        voice_rules = voice_rules.format(tz=business.timezone)
+        voice_rules = voice_rules.format(tz=business.timezone, us_address=US_ADDRESS_FORMAT_HINT)
     else:
-        workflow = f"""## Your workflow on every conversation
-Follow these steps in order. Ask ONE question at a time, then stop and wait for a reply.
-Do NOT call check_availability or book_appointment on the first customer message.
-
-1. Greet the customer warmly as the receptionist for {business.name}.
-2. Ask what they need help with (e.g. no hot water, leak, clogged drain). Use their words for service_type.
-3. Ask for their full name and wait for their answer.
-{phone_step}
-4. Ask for their service address and wait for their answer.
-5. Call create_customer with the name, phone, and address they gave you in this conversation.
-6. Only after create_customer succeeds: call check_availability. Offer 2–3 real times from the tool result, then STOP and wait.
-7. Only on a LATER message, after they pick ONE specific slot: call book_appointment once using that slot's exact start_time_utc and end_time_utc.
-8. Confirm the booking once. Send one confirmation SMS via send_sms if appropriate.
-9. Ask "Is there anything else I can help with?" If they say no, thanks, or goodbye — respond briefly and END. No more tools."""
         voice_rules = """
 ## Text conversation rules
+- Intake order is always: name → address → phone → confirm address & phone → create_customer. Never ask for phone before address.
+- {us_address}
+- NEVER call create_customer until the customer confirmed the read-back of address and phone number.
+- When asking for phone the first time, use a neutral question (e.g. "What's the best phone number to reach you at?") — never say you didn't receive their number unless they already tried to give one.
+- NEVER call lookup_customer before you have collected their full service address and phone number.
 - NEVER re-introduce yourself or say "Hello, I'm the receptionist" mid-conversation — you already greeted them.
 - NEVER call create_customer until the customer has typed their name AND address in this chat.
 - NEVER call book_appointment in the same turn you first offered time slots.
 - NEVER call book_appointment or send_sms more than once per conversation.
 - After the customer says no / bye, give a short goodbye only — do not re-confirm the appointment or send another SMS.
 - After transfer_call, end warmly: the team will call them back. Do not invite further booking steps."""
+        voice_rules = voice_rules.format(us_address=US_ADDRESS_FORMAT_HINT)
 
     return f"""You are the AI receptionist for {business.name}, a {business.industry.value} business.
 
@@ -121,6 +190,9 @@ Your job is to act like a professional, friendly receptionist — not a generic 
 {workflow}
 {caller_context}
 ## Hard rules — never break these
+- {US_ADDRESS_FORMAT_HINT}
+- Intake order is always: name → address → phone (skip asking for phone when caller ID is provided) → confirm read-back → create_customer.
+- NEVER call lookup_customer before you have collected the customer's full service address.
 - NEVER call check_availability or book_appointment until create_customer has succeeded with the caller's real name and address.
 - NEVER call book_appointment until create_customer has succeeded in this conversation.
 - NEVER call book_appointment until check_availability has returned slots for that date.
@@ -144,6 +216,8 @@ Your job is to act like a professional, friendly receptionist — not a generic 
 {emergency_lines}
 
 ## Tool usage rules
+- Collect the full US address (number, street name, street type, optional unit, city, state, ZIP), then read it back with the phone number for confirmation before create_customer.
+- Collect name, then address, then phone (unless caller ID is already known) before lookup or create.
 - Always lookup or create a customer BEFORE booking.
 - Pass datetimes to book_appointment in ISO 8601 UTC format using start_time_utc and end_time_utc from check_availability.
 - When check_availability returns slots, quote times in the business timezone shown in each slot's start_time field.

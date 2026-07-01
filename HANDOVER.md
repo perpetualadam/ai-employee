@@ -1,10 +1,74 @@
 # AI Employee — Agent Handover
 
-Last updated: 2026-06-29  
+Last updated: 2026-06-30  
 Repo: https://github.com/perpetualadam/ai-employee.git  
-Branch: `main` (latest: `bd160e1`)
+Branch: `main` (latest: `21141b2`)
 
 This document is for the **next AI agent** continuing work on this project. Read it before making changes.
+
+---
+
+## Progress at a glance
+
+Summary of the **original handover backlog** (2026-06-29) vs current state.
+
+### Completed — code shipped to `main`
+
+| Area | Item | Commit / evidence |
+|------|------|-------------------|
+| Voice | Telnyx migration (Twilio removed) | `c3c027e` |
+| Voice | Modular voice stack (`gather_handler`, `call_service`, `domain/`) | `c1beea1` |
+| Voice | `TranscriptChunk.confidence` — fixed 500 loops on gather | `c1beea1` |
+| Voice | Empty-gather UX: beep, longer timeout, retry prompts | `c1beea1` |
+| Voice | Intake guards — `create_customer` required before book | `c1beea1` |
+| Voice | Exact slot booking (`validate_and_resolve_slot`, `spoken_time`) | `c1beea1` |
+| Voice | Stale CRM records cannot bypass intake | tests: `test_stale_test_record_*`, `test_lookup_alone_*` |
+| Voice | Telnyx webhook signature (GET gather empty body) | `8d23252`, `test_webhook_auth.py` |
+| Calendar | Full day → offer next open day, not escalate | `e4fd749`, `find_next_available()` |
+| Escalation | Block `transfer_call` for scheduling-only reasons | `e4fd749` |
+| Escalation | Owner SMS on **text chat** escalation | `8d23252`, `owner_notified` on `ChatResponse` |
+| Text chat | Unified `VoiceSessionState` guards (intake, slots, SMS dedup) | `21141b2` |
+| Text chat | No `create_customer` on turn 1 (`user_turn_count`) | `21141b2` |
+| Text chat | Prompts: one question at a time, no re-greet, no dup confirm | `21141b2` |
+| Frontend | Receptionist: "Behind the scenes" tool log, `owner_notified` | `8d23252` / `21141b2` |
+| Frontend | Removed dev "Start a new session" escalation banner | `8d23252` |
+| Frontend | React duplicate key fix on tool badges | `8d23252` |
+| Quality | 32 automated spec tests (intake, slots, session, flow, webhooks) | `backend/tests/` |
+| Quality | Cursor modular-architecture rule | `bd160e1` |
+| Docs | This handover + `backend/app/ARCHITECTURE.md` | ongoing |
+
+### Partially done — code in place, may need tuning or config
+
+| Item | Status |
+|------|--------|
+| Empty-gather / STT timing | Beep + retries shipped; **live US-local test** may still need timing tweaks |
+| Customer confirmation SMS | Works when `TELNYX_MESSAGING_PROFILE_ID` set; otherwise dev-log only |
+| Owner escalation SMS | Code path exists; **Telnyx 400** reported in dev — messaging profile / number config |
+| Deprecated re-export shims | Files still exist; **no imports remain** in `backend/app/` — safe to delete |
+
+### Awaiting user verification (not confirmed in testing yet)
+
+| Item | How to verify |
+|------|----------------|
+| Text chat full booking flow | New session → "no hot water" → name → address → slots → book → "no bye" (see script below) |
+| Voice live call end-to-end | Call US Telnyx number after beep; check logs for signature warnings + booking |
+| Telnyx signature warnings gone | `docker compose logs -f api` during live call — no repeated verify failures |
+| Calendar not blocking tests | Cancel stale appointments on **Dashboard → Calendar** before slot tests |
+
+### Not started — still on the backlog
+
+| Priority | Item |
+|----------|------|
+| **P1** | Production deploy (VPS, HTTPS, Vercel frontend, managed Postgres, prod secrets) |
+| **P2** | Call logs / full transcript UI + API |
+| **P2** | Real email (SMTP/SendGrid) |
+| **P2** | Automated per-tenant phone provisioning |
+| **P2** | Update README ("AI & Voice prepared, not yet wired" is outdated) |
+| **P3** | Text-chat-specific spec tests (`user_turn_count` path) |
+| **P3** | Add `*local env*` to `.gitignore` (`.env` already ignored) |
+| **P3** | Delete deprecated voice re-export shims |
+| **P3** | CI/CD (GitHub Actions) |
+| **P4** | Real-time voice streaming, reminders cron, outbound calls, monitoring |
 
 ---
 
@@ -32,12 +96,12 @@ README marks Phases 1–6 as **Done**. The codebase is a **functional MVP**, not
 |-------|--------|--------|
 | 1 | Database, auth, dashboard shell | Done |
 | 2 | CRM + appointments API & UI | Done |
-| 3 | AI text receptionist (Groq + tools) | Done |
-| 4 | Voice calling (Telnyx TeXML + gather) | Done (needs reliability hardening) |
+| 3 | AI text receptionist (Groq + tools) | Done — hardened 2026-06-30 |
+| 4 | Voice calling (Telnyx TeXML + gather) | Done — **needs live re-test** |
 | 5 | Stripe billing + usage limits | Done |
 | 6 | Onboarding wizard + checklist | Done |
 
-**User is actively testing inbound voice calls** and has reported hearing loops, name/address intake skips, wrong booking times, and empty speech gathers. Many fixes were applied; **live re-test after the modular refactor is still needed**.
+**Bottom line for next agent:** Most **reported bugs are fixed in code**. The main gap is **user QA on text + voice** and **production deployment / product polish** (transcripts UI, email, CI).
 
 ---
 
@@ -59,46 +123,40 @@ app/
 
 **Dependency rule:** outer layers import inner only (`api` → `services`/`voice`/`ai` → `domain`).
 
-**Cursor rule:** `.cursor/rules/modular-architecture.mdc` (`alwaysApply: true`) — modular design, DRY, maintainable code. Do not duplicate logic; extend existing modules.
+**Cursor rule:** `.cursor/rules/modular-architecture.mdc` (`alwaysApply: true`).
 
 ### Voice call flow
 
 ```
-api/voice.py
-  → voice/gather_handler.py      STT result → retry prompts or next turn
-  → voice/call_service.py        Greeting, AI turn, TeXML orchestration
-  → ai/receptionist_agent.py     LLM + tool loop
-  → ai/receptionist_tools.py     CRM/calendar tool implementations
-  → services/*                   Persistence
+api/voice.py → gather_handler → call_service → receptionist_agent → receptionist_tools → services/*
+```
+
+### Text chat flow
+
+```
+api/receptionist.py → receptionist_agent (voice_mode=False) → receptionist_tools → services/*
 ```
 
 ### Key modules
 
 | Module | Responsibility |
 |--------|----------------|
-| `domain/intake.py` | Validate customer name and service address |
-| `domain/phone.py` | Normalize phones, resolve caller ID |
-| `domain/call.py` | Call-log helpers (e.g. booking detected) |
-| `ai/conversation_state.py` | Shared session state for tools |
-| `voice/session_state.py` | Phone-only intake guards and slot booking rules |
-| `voice/slots.py` | Format slots, spoken times, slot matching |
-| `voice/gather_prompts.py` | Empty/truncated speech retry messages |
-| `voice/conversation.py` | Farewell / closing detection |
-| `voice/texml_builder.py` | Telnyx XML responses |
-| `voice/webhook_auth.py` | Telnyx Ed25519 webhook signature validation |
-| `ai/receptionist_tools.py` | Tool implementations (delegates to VoiceSessionState in voice mode) |
+| `voice/session_state.py` | **Unified** intake guards, slot rules, SMS dedup (voice + text) |
+| `ai/receptionist_tools.py` | Tool implementations; always uses `VoiceSessionState` |
+| `services/appointment_service.py` | Calendar + `find_next_available()` |
+| `services/notification_service.py` | SMS + `notify_owner_escalation()` |
+| `voice/webhook_auth.py` | Telnyx Ed25519 signature validation |
 
-### Deprecated re-exports (use domain/voice imports in new code)
-
-- `voice/intake_utils.py` → `domain/intake.py`
-- `voice/phone_utils.py` → `domain/phone.py`
-- `voice/voice_intent.py` → `voice/conversation.py`, `voice/gather_prompts.py`, `domain/call.py`
+See `backend/app/ARCHITECTURE.md` for the full module table.
 
 ---
 
 ## Recent git history
 
 ```
+21141b2  Harden text chat booking to match voice intake and slot guards.
+e4fd749  Offer next-day slots when calendar is full instead of escalating.
+8d23252  Notify owners on chat escalation and fix Telnyx webhook verification.
 bd160e1  Add Cursor rule for modular, DRY, maintainable code.
 c1beea1  Refactor voice stack into layered modules and harden phone booking.
 c3c027e  Migrate voice to Telnyx and harden AI receptionist booking flow.
@@ -107,138 +165,119 @@ c3c027e  Migrate voice to Telnyx and harden AI receptionist booking flow.
 
 ---
 
-## Issues reported in testing & fixes applied
+## Booking flow contract (voice + text)
 
-### 1. Voice "can't hear me" / loops / 500 errors
+1. Greet → problem → name → address → phone (caller ID or ask)
+2. `create_customer` must succeed before availability or booking
+3. `check_availability` → offer slots → **wait** (no book same turn)
+4. Next message: customer picks slot → `book_appointment` once (exact UTC times)
+5. One confirmation SMS → brief goodbye on "no" / "bye"
 
-- **Root cause:** `AttributeError: 'TranscriptChunk' object has no attribute 'confidence'` in gather handling → every speech turn returned 500, Telnyx restarted call flow.
-- **Fix:** Added `confidence: float | None = None` to `TranscriptChunk` in `voice/provider.py`; gather path passes confidence; callers use `getattr(chunk, "confidence", None)`.
-
-### 2. Empty gathers / fragmented STT
-
-- Many `Empty gather result` with `SpeechResult=""`, `Confidence=0.0` — caller speaking too early or during AI prompt.
-- **Fixes:** beep before gather (`voice/static/beep.wav`), pause, longer timeout (30s), `speechTimeout="5"`, context-aware retry prompts in `voice/gather_prompts.py`.
-- **User feedback:** "Go ahead" cue was confusing — **removed** from `texml_builder.py`.
-
-### 3. AI skipping name/address intake & booking wrong customers
-
-- `lookup_customer` found prior test records and allowed booking without fresh intake.
-- **Fixes:** Voice mode requires `create_customer` success before availability/booking; placeholder name/address rejection; stricter address validation in `domain/intake.py` (must include street detail, not just state/city).
-
-### 4. Wrong booking time (offered 11:30 AM, booked 11 AM)
-
-- AI was inventing/rounding times instead of using exact slots.
-- **Fixes:** `spoken_time` on each slot; `validate_and_resolve_slot()` in `VoiceSessionState`; prompts/tool descriptions require exact `start_time_utc`/`end_time_utc` from offered slots.
-
-### 5. Telnyx webhook signature warnings (FIXED 2026-06-29)
-
-- **Root cause:** Verifier signed the **query string** on TeXML GET callbacks; Telnyx signs `{timestamp}|{raw_body}` and GET gather has an **empty body**.
-- **Fix:** `backend/app/voice/webhook_auth.py` — sign raw body only; support `v1a,` signature prefix and Standard Webhooks `webhook-id` fallback.
-- `TELNYX_PUBLIC_KEY` is synced across `.env`, Docker, and container (not an env mismatch).
-- In `DEBUG=true`, invalid signatures **warn but do not block**; in production (`DEBUG=false`) they return 403.
-- Re-test on next live call — signature warnings should stop.
+Text-only: `create_customer` blocked until `user_turn_count >= 2`.  
+Full calendar: offer `next_slots` — never escalate for scheduling alone.
 
 ---
 
-## Test context (from user's environment)
+## Issues reported & fix status
+
+| # | Issue | Fix status | User verified? |
+|---|-------|------------|----------------|
+| 1 | Voice 500 / loops (`TranscriptChunk`) | Fixed | Unknown |
+| 2 | Empty gathers / STT timing | Mitigated (beep, retries) | Unknown |
+| 3 | Skipped name/address intake | Fixed | Covered by spec tests |
+| 4 | Wrong booking time (rounded slots) | Fixed | Covered by spec tests |
+| 5 | Telnyx webhook signature warnings | Fixed | **Pending live call** |
+| 6 | Text chat skipped intake / dup SMS | Fixed (`21141b2`) | **Pending retest** |
+| 7 | Escalation when calendar full | Fixed (`e4fd749`) | Pending retest |
+| 8 | Chat escalation no owner notify | Fixed (`8d23252`) | SMS may still 400 |
+
+---
+
+## Known open issues
+
+| Issue | Notes |
+|-------|--------|
+| Owner escalation SMS 400 | Telnyx messaging config — `owner_notified: false` until fixed |
+| Test calendar clutter | Cancel appointments on **Dashboard → Calendar** |
+| README outdated | Still says voice "not yet wired" |
+| `ai employee local env.txt` | Untracked secrets file; not in `.gitignore` |
+| HANDOVER / ARCHITECTURE docs | Updated locally; **not yet committed** to GitHub |
+
+---
+
+## Test context
 
 | Item | Value |
 |------|--------|
 | Business ID | `047694b9-6e63-4bbf-b186-280e0e23e968` |
-| Test Telnyx number (US business line) | `+1 380 273 8396` |
-| Dev test caller (owner's phone) | `+447492046947` |
-| Voice mode | `VOICE_MODE=gather` (only supported mode for Telnyx) |
+| Test Telnyx number | `+1 380 273 8396` |
+| Dev test caller | `+447492046947` |
+| Voice mode | `VOICE_MODE=gather` |
 
-### Testing from outside the US (not a product requirement)
+### Text chat retest script
 
-**Production:** Local US customers call a local US plumber number — short PSTN hop, `en-US` gather in `texml_builder.py`.
+New session. Optional Caller ID: `+447492046947`.
 
-**Current dev setup:** Owner tests from a **UK mobile** to a **US Telnyx number**. You do **not** need US residency to **own** the business number (already on Telnyx). The UK line is only the **test caller**.
-
-Calling UK → US can make voice tests **harder than production** (extra latency, call compression, UK accent vs `en-US` STT). Empty gathers or “please repeat” during dev may reflect **test conditions**, not a bug that US callers will hit.
-
-**Recommended testing ladder:**
-
-1. **Fastest — dashboard chat** (`/dashboard/receptionist`): same AI + booking tools, no phone. Use for intake, slots, and CRM logic daily.
-2. **Voice smoke test — UK phone → US Telnyx number:** OK for webhooks, greeting, beep, gather, end-to-end sanity. Speak after the beep; quiet room.
-3. **Pre-launch — one US PSTN test:** friend in the US, or Telnyx second US number + SIP softphone (Zoiper/Linphone) so both legs are US. Closest to real plumber traffic.
-
-Do **not** treat “international caller tuning” as a backlog item unless US-local tests still fail.
+| Step | User says | Expected |
+|------|-----------|----------|
+| 1 | "I have no hot water" | Ask for **name** |
+| 2 | Full name | Ask for **address** |
+| 3 | Full street address | Offer real slots |
+| 4 | "8am" | **One** booking confirmation |
+| 5 | "no bye" | Brief goodbye only |
 
 ### Local dev commands
 
 ```bash
-# Backend + DB
 docker compose up -d
-docker compose restart api          # after code changes
-docker compose logs -f api          # watch voice/gather logs
-
-# Frontend
-cd frontend && npm run dev          # http://localhost:3000
-
-# Expose API for Telnyx webhooks
-ngrok http 8000
-# Set PUBLIC_API_URL=https://<ngrok-id>.ngrok-free.app in .env
+docker compose up -d --force-recreate api   # after backend changes
+docker compose exec api python -m unittest discover -s tests -v   # 32 tests
+cd frontend && npm run dev
+ngrok http 8000   # set PUBLIC_API_URL in .env
 ```
 
-API docs (debug): http://localhost:8000/docs
-
 ---
 
-## Environment & secrets
+## What's left to do (prioritized checklist)
 
-- Copy `.env.example` → `.env` at repo root (docker-compose reads env vars from host).
-- **Never commit:** `.env`, `ai employee local env.txt` (untracked; not in `.gitignore` yet — consider adding).
-- Required for voice: `GROQ_API_KEY`, `TELNYX_API_KEY`, `TELNYX_PUBLIC_KEY`, `TELNYX_ACCOUNT_SID`, `TELNYX_PHONE_NUMBER`, `PUBLIC_API_URL`.
-- Optional SMS: `TELNYX_MESSAGING_PROFILE_ID`.
-- Billing: `STRIPE_*` vars (see README).
+Use `[x]` / `[ ]` when updating this list.
 
-Telnyx TeXML app voice URL must point to:
+### P0 — Verify fixes (user / QA)
 
-- Inbound: `{PUBLIC_API_URL}/api/v1/voice/inbound`
-- Gather callback is built into TeXML by `texml_builder.py`
-
-In app **Settings**, business must set the same phone number and an escalation phone.
-
----
-
-## What's left to do (prioritized)
-
-### P0 — Voice reliability & verification
-
-- [ ] Re-test on live call — Telnyx signature warnings should be gone after `webhook_auth.py` fix (2026-06-29).
-- [ ] Optional live-call smoke test (Telnyx) — automated spec tests in `backend/tests/test_*_spec.py` cover intake, slots, and booking flow.
-- [ ] Tune empty-gather handling if caller speaks too early (timing/beep UX — verify with US-local test before over-optimizing for UK→US dev calls).
-- [ ] Confirm intake guards block stale test customer records in voice mode.
+- [ ] Re-test text chat: intake → slots → book → goodbye
+- [ ] Re-test voice live call (signature + intake + booking)
+- [ ] Fix owner escalation SMS if `owner_notified: false`
+- [ ] Clear stale test appointments before slot tests
 
 ### P1 — Production deployment
 
-- [ ] Deploy backend Docker container to VPS with HTTPS (replace ngrok).
-- [ ] Deploy frontend to Vercel; set `NEXT_PUBLIC_API_URL`.
-- [ ] Managed PostgreSQL or backed-up volume.
-- [ ] Production secrets: strong `SECRET_KEY`, `DEBUG=false`, all integration keys.
-- [ ] Point Telnyx TeXML app and Stripe webhook at production URLs.
+- [ ] Backend on VPS with HTTPS (replace ngrok)
+- [ ] Frontend on Vercel; `NEXT_PUBLIC_API_URL`
+- [ ] Managed PostgreSQL or backed-up volume
+- [ ] Prod secrets: `SECRET_KEY`, `DEBUG=false`, integration keys
+- [ ] Telnyx TeXML + Stripe webhooks → production URLs
 
 ### P2 — Product gaps
 
-- [ ] **Call logs / transcript UI** — data exists in `call_logs.conversation_history`; dashboard only shows 10-row summary, no detail page or API route for full transcript.
-- [ ] **Real email** — `NotificationService.send_email` only logs; no SMTP/SendGrid.
-- [ ] **Per-tenant phone provisioning** — inbound routing works via `business.phone_number`, but numbers are manually assigned in Telnyx + Settings (no automation).
-- [ ] Update **README** — still says "AI & Voice (prepared, not yet wired)"; outdated.
+- [ ] Call logs / transcript UI (`call_logs.conversation_history` exists; no drill-down UI)
+- [ ] Real email provider
+- [ ] Per-tenant phone auto-provisioning
+- [ ] Update README
 
 ### P3 — Quality & maintainability
 
-- [ ] **Automated spec tests** — `backend/tests/test_intake_spec.py`, `test_voice_slots_spec.py`, `test_voice_session_spec.py`, `test_voice_receptionist_spec.py`, `test_webhook_auth.py`. Run: `docker compose exec api python -m unittest discover -s tests -v`
-- [ ] Add `ai employee local env.txt` (or `*local env*`) to `.gitignore`.
-- [ ] Remove deprecated re-export shims once imports are migrated.
-- [ ] CI/CD (GitHub Actions) — not present.
+- [x] Automated spec tests (32)
+- [ ] Text-chat-specific spec tests
+- [ ] `.gitignore` for `*local env*`
+- [ ] Remove deprecated voice re-export shims (no app imports left)
+- [ ] CI/CD (GitHub Actions)
 
-### P4 — Optional upgrades (post-MVP)
+### P4 — Post-MVP optional
 
-- [ ] Real-time voice streaming (`VOICE_MODE=stream` + Deepgram) — **not implemented** for Telnyx; `media_stream_handler.py` rejects WebSocket connections.
-- [ ] Appointment reminders (SMS/email cron).
-- [ ] Outbound calls (schema supports; not built).
-- [ ] Monitoring (Sentry, uptime, call failure alerts).
+- [ ] Real-time voice streaming (`VOICE_MODE=stream` — not implemented)
+- [ ] Appointment reminders
+- [ ] Outbound calls
+- [ ] Monitoring (Sentry, uptime)
 
 ---
 
@@ -246,86 +285,46 @@ In app **Settings**, business must set the same phone number and an escalation p
 
 | Route | Purpose |
 |-------|---------|
-| `/dashboard` | Overview, stats, recent calls/customers/AI activity |
-| `/dashboard/receptionist` | Text chat test of AI receptionist |
-| `/dashboard/customers` | CRM |
-| `/dashboard/jobs` | Jobs |
-| `/dashboard/calendar` | Appointments |
-| `/dashboard/settings` | Business profile, phone, hours, AI instructions |
-| `/dashboard/billing` | Stripe checkout/portal, usage |
-| `/onboarding` | Setup wizard |
+| `/dashboard/receptionist` | Text chat test (Caller ID, "Behind the scenes") |
+| `/dashboard/calendar` | Appointments — cancel test bookings here |
+| `/dashboard/settings` | Phone, escalation phone, AI instructions |
+| `/dashboard` | Overview |
 
-**Missing:** dedicated Calls page with transcript drill-down.
+**Missing:** `/dashboard/calls` with transcript drill-down.
 
 ---
 
 ## API endpoints (high level)
 
-See README for full list. Voice-specific:
-
 | Method | Path | Description |
 |--------|------|-------------|
-| POST/GET | `/api/v1/voice/inbound` | Telnyx inbound call webhook |
-| POST/GET | `/api/v1/voice/gather` | Speech gather callback |
-| POST | `/api/v1/voice/status` | Call status callback |
-| WS | `/api/v1/voice/stream` | Legacy — rejects; use gather mode |
-
-AI chat: `POST /api/v1/receptionist/chat`
-
----
-
-## Billing & limits
-
-- 14-day free trial on Starter limits (`backend/app/billing/plans.py`).
-- Starter: 100 calls/mo, 500 AI tool calls/mo ($49).
-- Pro: 500 calls/mo, 5000 AI tool calls/mo ($99).
-- Voice and AI blocked when trial expired or over limit (`core/deps.py`, `subscription_service.py`).
-
----
-
-## Multi-tenancy
-
-- Every tenant table has `business_id`.
-- API resolves authenticated user's business and scopes all queries.
-- Inbound voice: `find_business_by_phone()` in `call_service.py` matches `Business.phone_number` to called Telnyx number.
-- Single Telnyx account in env today; per-business numbers configured manually.
-
----
-
-## Notifications
-
-| Channel | Status |
-|---------|--------|
-| SMS | Telnyx when configured; dev mode logs only |
-| Email | Dev log only — no real provider |
-
-Booking confirmation SMS is triggered from `receptionist_tools.py` via `NotificationService`.
+| POST/GET | `/api/v1/voice/inbound` | Telnyx inbound |
+| POST/GET | `/api/v1/voice/gather` | Speech gather |
+| POST | `/api/v1/receptionist/chat` | Text chat (`owner_notified` on escalate) |
 
 ---
 
 ## Suggested next-agent workflow
 
-1. Read `backend/app/ARCHITECTURE.md` and `.cursor/rules/modular-architecture.mdc`.
-2. Check `docker compose logs -f api` during a test call.
-3. If voice issues: trace `gather_handler.py` → `call_service.py` → `receptionist_agent.py` → `receptionist_tools.py` → `session_state.py`.
-4. Do not put business logic in `api/` routes or duplicate validation outside `domain/`.
-5. Only commit when user explicitly asks. Never commit `.env` or `ai employee local env.txt`.
+1. Read `backend/app/ARCHITECTURE.md`.
+2. Run spec tests (expect 32 passing).
+3. If booking bugs: `receptionist_tools.py` → `session_state.py` → `prompts.py`.
+4. If voice bugs: `gather_handler.py` → `call_service.py` → same tools path.
+5. Update **prompts + guards + tests** together when changing booking behavior.
+6. Only commit when user asks. Never commit `.env` or `ai employee local env.txt`.
 
 ---
 
 ## Prior conversation reference
 
-Extended debugging and refactor context lives in agent transcript:
-
 `C:\Users\Brian\.cursor\projects\c-Users-Brian-OneDrive-Desktop-AI-Employee-for-Traders\agent-transcripts\0acc2ceb-46cd-423a-9ddd-ed6d17fa383b\0acc2ceb-46cd-423a-9ddd-ed6d17fa383b.jsonl`
 
-Search keywords: `TranscriptChunk`, `Empty gather`, `validate_and_resolve_slot`, `VoiceSessionState`, `TELNYX_PUBLIC_KEY`.
+Search: `no hot water`, `user_turn_count`, `find_next_available`, `owner_notified`.
 
 ---
 
-## User preferences (from rules)
+## User preferences
 
-- Modular, DRY code — smallest correct diff, no drive-by refactors.
+- Smallest correct diff; no drive-by refactors.
 - Do not commit unless explicitly requested.
-- Do not create markdown files unless asked (this handover was explicitly requested).
-- Use existing conventions; match surrounding code style.
+- Match existing code conventions.

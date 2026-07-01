@@ -24,6 +24,7 @@ from app.models.enums import (
     AppointmentStatus,
     CallDirection,
     CallStatus,
+    ConversationChannel,
     EmergencyAction,
     Industry,
     JobStatus,
@@ -96,6 +97,7 @@ class Business(Base, TimestampMixin):
     ai_instructions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     phone_number: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     escalation_phone: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    public_slug: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, unique=True, index=True)
 
     # Billing (Stripe)
     stripe_customer_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
@@ -315,6 +317,17 @@ class CallLog(Base, TimestampMixin):
         index=True,
     )
     external_call_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    channel: Mapped[ConversationChannel] = mapped_column(
+        Enum(ConversationChannel, name="conversation_channel", values_callable=_enum_values),
+        default=ConversationChannel.VOICE,
+        nullable=False,
+    )
+    parent_call_log_id: Mapped[Optional[str]] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("call_logs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     direction: Mapped[CallDirection] = mapped_column(
         Enum(CallDirection, name="call_direction", values_callable=_enum_values), nullable=False
     )
@@ -326,6 +339,7 @@ class CallLog(Base, TimestampMixin):
     transcript: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     conversation_history: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
     summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    ai_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     escalated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     business: Mapped["Business"] = relationship("Business", back_populates="call_logs")
@@ -364,3 +378,60 @@ class AIActivityLog(Base):
     )
 
     call_log: Mapped[Optional["CallLog"]] = relationship("CallLog", back_populates="ai_activities")
+
+
+class AddressConfirmationToken(Base, TimestampMixin):
+    """Signed link for customers to confirm service address after voice STT issues."""
+
+    __tablename__ = "address_confirmation_tokens"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    business_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("businesses.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    call_log_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("call_logs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    customer_id: Mapped[Optional[str]] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("customers.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    customer_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    confirmed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    confirmed_address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class WebContinuationToken(Base, TimestampMixin):
+    """Token for customers to continue a voice call on the public web chat."""
+
+    __tablename__ = "web_continuation_tokens"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    business_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("businesses.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    call_log_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("call_logs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

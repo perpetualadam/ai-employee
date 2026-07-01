@@ -20,7 +20,14 @@ router = APIRouter(prefix="/business", tags=["business"])
 
 
 @router.get("", response_model=BusinessResponse)
-def get_business(business: Business = Depends(get_user_primary_business)) -> Business:
+def get_business(
+    business: Business = Depends(get_user_primary_business),
+    db: Session = Depends(get_db),
+) -> Business:
+    if not business.public_slug:
+        from app.services.business_slug_service import BusinessSlugService
+
+        BusinessSlugService.ensure_unique_slug(db, business)
     return business
 
 

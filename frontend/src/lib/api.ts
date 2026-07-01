@@ -67,6 +67,56 @@ export const api = {
   updateBusiness: (data: Partial<Business>) =>
     request<Business>("/business", { method: "PATCH", body: JSON.stringify(data) }),
   getDashboard: () => request<DashboardSummary>("/dashboard"),
+  listConversations: (params?: { limit?: number; offset?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.limit) qs.set("limit", String(params.limit));
+    if (params?.offset) qs.set("offset", String(params.offset));
+    const query = qs.toString();
+    return request<ConversationListItem[]>(`/conversations${query ? `?${query}` : ""}`);
+  },
+  getConversation: (id: string) => request<ConversationDetail>(`/conversations/${id}`),
+
+  getAddressConfirmInfo: (token: string) =>
+    request<AddressConfirmInfo>(`/public/address-confirm/${token}`, {}, null),
+  submitAddressConfirm: (token: string, address: string) =>
+    request<AddressConfirmResult>(`/public/address-confirm/${token}`, {
+      method: "POST",
+      body: JSON.stringify({ address }),
+    }, null),
+
+  getPublicChatInfo: (slug: string) =>
+    request<PublicChatInfo>(`/public/chat/${slug}`, {}, null),
+
+  publicChat: (
+    slug: string,
+    data: {
+      message: string;
+      history: ChatMessage[];
+      session_id?: string;
+      customer_phone?: string;
+    },
+  ) =>
+    request<PublicChatResponse>(`/public/chat/${slug}`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }, null),
+
+  getPublicContinueInfo: (token: string) =>
+    request<PublicContinueInfo>(`/public/continue/${token}`, {}, null),
+
+  publicChatContinue: (
+    token: string,
+    data: {
+      message: string;
+      history: ChatMessage[];
+      session_id?: string;
+      customer_phone?: string;
+    },
+  ) =>
+    request<PublicChatResponse>(`/public/continue/${token}`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }, null),
 
   // Customers
   listCustomers: (search?: string) =>
@@ -163,6 +213,7 @@ export interface Business {
   ai_instructions: string | null;
   phone_number: string | null;
   escalation_phone: string | null;
+  public_slug: string | null;
   onboarding_completed: boolean;
   created_at: string;
   updated_at: string;
@@ -249,8 +300,102 @@ export interface CallLog {
   caller_phone: string | null;
   duration_seconds: number | null;
   summary: string | null;
+  ai_summary?: string | null;
   escalated: boolean;
   created_at: string;
+}
+
+export interface ConversationLeadCard {
+  customer_name: string | null;
+  customer_phone: string | null;
+  service_address: string | null;
+  service_type: string | null;
+  appointment_time: string | null;
+  is_booked: boolean;
+  is_escalated: boolean;
+  is_emergency: boolean;
+}
+
+export interface ConversationListItem {
+  id: string;
+  channel: string;
+  channel_label: string;
+  status: string;
+  caller_phone: string | null;
+  summary: string | null;
+  ai_summary: string | null;
+  escalated: boolean;
+  is_booked: boolean;
+  created_at: string;
+  lead_card: ConversationLeadCard;
+}
+
+export interface ConversationMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+  channel?: string | null;
+}
+
+export interface ConversationActivity {
+  id: string;
+  action: string;
+  tool_name: string | null;
+  input_data: Record<string, unknown> | null;
+  output_data: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface ConversationDetail {
+  id: string;
+  business_id: string;
+  customer_id: string | null;
+  channel: string;
+  channel_label: string;
+  status: string;
+  caller_phone: string | null;
+  duration_seconds: number | null;
+  summary: string | null;
+  ai_summary: string | null;
+  escalated: boolean;
+  created_at: string;
+  messages: ConversationMessage[];
+  activities: ConversationActivity[];
+  lead_card: ConversationLeadCard;
+}
+
+export interface AddressConfirmInfo {
+  business_name: string;
+  customer_name: string | null;
+  already_confirmed: boolean;
+  confirmed_address: string | null;
+}
+
+export interface AddressConfirmResult {
+  success: boolean;
+  address: string | null;
+  message: string;
+}
+
+export interface PublicChatInfo {
+  business_name: string;
+  public_slug: string;
+  phone_number: string | null;
+}
+
+export interface PublicContinueInfo {
+  business_name: string;
+  session_id: string;
+  phone_number: string | null;
+  messages: ChatMessage[];
+  voice_handoff: boolean;
+}
+
+export interface PublicChatResponse {
+  reply: string;
+  session_id: string;
+  tools_used: string[];
+  escalated: boolean;
+  owner_notified: boolean;
 }
 
 export interface AIActivity {

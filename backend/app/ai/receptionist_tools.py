@@ -8,7 +8,12 @@ from sqlalchemy.orm import Session
 
 from app.ai.date_utils import business_now, resolve_target_date
 from app.ai.tools import ToolResult
-from app.domain.intake import is_valid_customer_name, is_valid_service_address
+from app.domain.intake import (
+    address_appears_in_caller_text,
+    is_valid_customer_name,
+    is_valid_service_address,
+    service_address_validation_message,
+)
 from app.domain.phone import is_plausible_phone, normalize_phone, resolve_caller_phone
 from app.models import Business
 from app.schemas import AppointmentCreate, CustomerCreate, CustomerUpdate
@@ -41,6 +46,7 @@ class ReceptionistToolsImpl:
         self.escalated = False
         self.owner_notified = False
         self.user_turn_count = 0
+        self.current_user_message = ""
         self._session: VoiceSessionState = VoiceSessionState.load(
             db, business.id, call_log_id
         )
@@ -51,6 +57,41 @@ class ReceptionistToolsImpl:
     def _resolve_phone(self, phone: str) -> str:
         resolved = resolve_caller_phone(phone, self._session.caller_phone)
         return resolved or normalize_phone(phone)
+
+    def _caller_user_messages(self) -> list[str]:
+        from app.models import CallLog
+
+        messages: list[str] = []
+        if self.call_log_id:
+            call = (
+                self.db.query(CallLog)
+                .filter(CallLog.id == self.call_log_id, CallLog.business_id == self.business_id)
+                .first()
+            )
+            if call and call.conversation_history:
+                messages.extend(
+                    entry["content"]
+                    for entry in call.conversation_history
+                    if entry.get("role") == "user" and entry.get("content")
+                )
+        if self.current_user_message:
+            messages.append(self.current_user_message)
+        return messages
+
+    def _require_address_from_caller(self, address: str | None) -> ToolResult | None:
+        if not self.voice_mode:
+            return None
+        if not address or not address_appears_in_caller_text(address, self._caller_user_messages()):
+            return ToolResult(
+                success=False,
+                data={},
+                message=(
+                    "The caller must say the full US address out loud — house number, street name, "
+                    "street type, city, state, and ZIP. Ask them to repeat it; do not combine "
+                    "fragments or guess."
+                ),
+            )
+        return None
 
     async def book_appointment(
         self,
@@ -111,6 +152,7 @@ class ReceptionistToolsImpl:
                 ),
             )
             self._session.booking_complete = True
+            customer = CustomerService.get_customer(self.db, self.business_id, customer_id)
             if self.call_log_id:
                 from app.models import CallLog
 
@@ -120,8 +162,17 @@ class ReceptionistToolsImpl:
                     .first()
                 )
                 if call:
-                    call.summary = "Appointment booked on voice call"
+                    call.summary = (
+                        "Appointment booked on voice call"
+                        if self.voice_mode
+                        else "Appointment booked on text chat"
+                    )
+                    if customer:
+                        call.customer_id = customer.id
                     self.db.commit()
+
+            if customer:
+                self.notifications.send_booking_confirmation_email(customer, appt)
 
             tz = ZoneInfo(self.business.timezone)
             local_start = appt.start_time.astimezone(tz)
@@ -238,20 +289,97 @@ class ReceptionistToolsImpl:
             return ToolResult(
                 success=False,
                 data={},
-                message="Ask the caller for their full name first — do not guess or use a placeholder.",
+                message=(
+                    "Ask the caller for their full name first — do not guess or use a placeholder. "
+                    "If speech recognition put the plumbing problem in the name field, ask what issue "
+                    "they need help with, then ask for their real name."
+                ),
             )
+
+        if self._session.booking_complete and self._session.verified_customer_id:
+            if not is_valid_service_address(address):
+                return ToolResult(
+                    success=False,
+                    data={},
+                    message=(
+                        "Appointment is already booked. Ask for the complete US address "
+                        "(house number, street, city, state, ZIP) and call create_customer "
+                        "again to update their record."
+                    ),
+                )
+            address_block = self._require_address_from_caller(address)
+            if address_block:
+                return address_block
+            customer = CustomerService.get_customer(
+                self.db, self.business_id, self._session.verified_customer_id
+            )
+            if customer is None:
+                return ToolResult(
+                    success=False,
+                    data={},
+                    message="Could not find the customer record to update.",
+                )
+            customer = CustomerService.update_customer(
+                self.db,
+                customer,
+                CustomerUpdate(address=address.strip()),
+            )
+            self._session.note_customer(customer.id, customer.address, customer.name)
+            return ToolResult(
+                success=True,
+                data={
+                    "customer_id": customer.id,
+                    "name": customer.name,
+                    "phone": customer.phone,
+                    "address": customer.address,
+                    "address_updated": True,
+                },
+                message=(
+                    f"Address updated to {customer.address}. "
+                    "Briefly confirm the address with the caller. The appointment is already booked."
+                ),
+            )
+
         if not is_valid_service_address(address):
             return ToolResult(
                 success=False,
                 data={},
-                message=(
-                    "Address is required. Ask for the full street address including "
-                    "street number — a city or state alone is not enough."
-                ),
+                message=service_address_validation_message(address),
             )
+        address_block = self._require_address_from_caller(address)
+        if address_block:
+            return address_block
 
+        raw_phone = (phone or "").strip()
         phone = self._resolve_phone(phone)
         if not is_plausible_phone(phone):
+            has_caller_id = bool(
+                self._session.caller_phone
+                and self._session.caller_phone not in ("text-chat", "unknown", "")
+                and is_plausible_phone(normalize_phone(self._session.caller_phone))
+            )
+            customer_gave_phone = bool(
+                raw_phone and raw_phone not in ("text-chat", "unknown", "")
+            )
+            if not self.voice_mode and not has_caller_id and not customer_gave_phone:
+                return ToolResult(
+                    success=False,
+                    data={},
+                    message=(
+                        "Phone number not collected yet. Ask the customer for their phone number "
+                        "now — e.g. 'What's the best phone number to reach you at?' "
+                        "Do not say you didn't receive their number; you have not asked yet."
+                    ),
+                )
+            if not self.voice_mode and not has_caller_id and customer_gave_phone:
+                return ToolResult(
+                    success=False,
+                    data={},
+                    message=(
+                        "That phone number doesn't look valid. Ask the customer to provide "
+                        "their phone number again, including area code."
+                    ),
+                )
             return ToolResult(
                 success=False,
                 data={},
@@ -350,6 +478,107 @@ class ReceptionistToolsImpl:
             success=result["sent"],
             data=result,
             message="SMS sent" if result["sent"] else "Failed to send SMS",
+        )
+
+    async def send_address_confirmation_link(
+        self,
+        customer_name: str | None = None,
+    ) -> ToolResult:
+        """Text the caller a link to confirm service address (voice recovery)."""
+        if not self.voice_mode:
+            return ToolResult(
+                success=False,
+                data={},
+                message="Address confirmation links are only used during phone calls.",
+            )
+        if not self.call_log_id:
+            return ToolResult(success=False, data={}, message="No active call session.")
+
+        from app.models import CallLog
+        from app.services.address_confirmation_service import AddressConfirmationService
+
+        call = (
+            self.db.query(CallLog)
+            .filter(CallLog.id == self.call_log_id, CallLog.business_id == self.business_id)
+            .first()
+        )
+        if call is None:
+            return ToolResult(success=False, data={}, message="Call session not found.")
+
+        name = (customer_name or "").strip() or None
+        result = AddressConfirmationService.create_and_send_link(
+            self.db,
+            self.business,
+            call,
+            customer_name=name,
+            customer_id=self._session.verified_customer_id,
+        )
+        if not result.get("link_created"):
+            return ToolResult(
+                success=False,
+                data=result,
+                message=(
+                    "Could not create the address confirmation link. Ask the caller to spell their "
+                    "full address slowly, including city, state, and ZIP."
+                ),
+            )
+        if result.get("sent"):
+            message = (
+                "Address confirmation link sent by SMS. Tell the caller you texted them a link "
+                "to confirm their service address. They can stay on the line or complete it on "
+                "their phone. Continue the call once the address is confirmed."
+            )
+        else:
+            message = (
+                "Address confirmation link was created but the text message could not be delivered. "
+                "Ask the caller to spell their full US address slowly — house number, street, city, "
+                "state, and ZIP — or try again later."
+            )
+        return ToolResult(
+            success=True,
+            data=result,
+            message=message,
+        )
+
+    async def send_web_chat_link(self) -> ToolResult:
+        """Give the caller a web link to continue this conversation online (voice handoff)."""
+        if not self.voice_mode:
+            return ToolResult(
+                success=False,
+                data={},
+                message="Web chat links are created during phone calls only.",
+            )
+        if not self.call_log_id:
+            return ToolResult(success=False, data={}, message="No active call session.")
+
+        from app.models import CallLog
+        from app.services.business_slug_service import BusinessSlugService
+        from app.services.web_continuation_service import WebContinuationService
+
+        call = (
+            self.db.query(CallLog)
+            .filter(CallLog.id == self.call_log_id, CallLog.business_id == self.business_id)
+            .first()
+        )
+        if call is None:
+            return ToolResult(success=False, data={}, message="Call session not found.")
+
+        if not self.business.public_slug:
+            BusinessSlugService.ensure_unique_slug(self.db, self.business)
+
+        result = WebContinuationService.create_for_call(self.db, self.business, call)
+        continue_url = result["continue_url"]
+        standalone = result.get("standalone_chat_url") or continue_url
+
+        return ToolResult(
+            success=True,
+            data=result,
+            message=(
+                "Web chat link created. Tell the caller they can continue on your website — "
+                f"for this call use: {continue_url} — or anytime at: {standalone}. "
+                "They can type their address and finish booking online. "
+                "Keep it brief; do not spell the full URL unless they ask."
+            ),
         )
 
     def _caller_phone_for_escalation(self) -> str | None:
@@ -460,7 +689,8 @@ class ReceptionistToolsImpl:
                 data={"found": False},
                 message=(
                     "No customer found with that phone number. "
-                    "Ask for their full name and service address, then call create_customer."
+                    "Ask for their full service address next (if not collected yet), then their phone number "
+                    "if you do not have caller ID, then call create_customer."
                 ),
             )
 
@@ -544,6 +774,12 @@ class ReceptionistToolsImpl:
             )
         if tool_name == "send_sms":
             return await self.send_sms(phone=arguments["phone"], message=arguments["message"])
+        if tool_name == "send_address_confirmation_link":
+            return await self.send_address_confirmation_link(
+                customer_name=arguments.get("customer_name"),
+            )
+        if tool_name == "send_web_chat_link":
+            return await self.send_web_chat_link()
         if tool_name == "transfer_call":
             return await self.transfer_call(
                 call_id=arguments.get("call_id", self.call_log_id or "text-session"),

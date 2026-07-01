@@ -3,6 +3,8 @@
 from html import escape
 from urllib.parse import urlencode
 
+from app.config import get_settings
+
 VOICE = "Polly.Joanna"
 LANGUAGE = "en-US"
 
@@ -35,10 +37,10 @@ def build_say_and_gather(
     """
     urls = _voice_urls(base_url, call_log_id)
     gather_url = escape(urls["gather"], quote=True)
+    settings = get_settings()
     beep = ""
     if include_beep:
         beep_url = escape(urls["beep"], quote=True)
-        # Play beep after the prompt, before Gather opens the mic.
         beep = f'<Play loop="1">{beep_url}</Play>'
 
     no_input = _say("I didn't catch that. Goodbye!")
@@ -47,9 +49,9 @@ def build_say_and_gather(
         "<Response>"
         f"{_say(message)}"
         f"{beep}"
-        '<Pause length="1"/>'
         f'<Gather input="speech dtmf" action="{gather_url}" method="GET" '
-        f'timeout="30" speechTimeout="5" language="{LANGUAGE}">'
+        f'timeout="{settings.voice_gather_timeout}" '
+        f'speechTimeout="{settings.voice_gather_speech_timeout}" language="{LANGUAGE}">'
         "</Gather>"
         f"{no_input}"
         "<Hangup/>"

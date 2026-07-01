@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -110,9 +111,14 @@ export default function DashboardPage() {
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle>Recent calls</CardTitle>
-              <CardDescription>Inbound calls handled by AI</CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Recent conversations</CardTitle>
+                <CardDescription>Calls and chats handled by AI</CardDescription>
+              </div>
+              <Link href="/dashboard/conversations" className="text-sm text-primary hover:underline">
+                View inbox
+              </Link>
             </CardHeader>
             <CardContent>
               {data.recent_calls.length === 0 ? (
@@ -124,18 +130,23 @@ export default function DashboardPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>From</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead>Summary</TableHead>
                       <TableHead>When</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {data.recent_calls.map((call) => (
                       <TableRow key={call.id}>
-                        <TableCell>{call.caller_phone ?? "Unknown"}</TableCell>
                         <TableCell>
-                          <Badge variant={call.escalated ? "destructive" : "secondary"}>
-                            {call.status}
-                          </Badge>
+                          <Link
+                            href={`/dashboard/conversations/${call.id}`}
+                            className="hover:underline"
+                          >
+                            {call.caller_phone ?? "Unknown"}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="max-w-xs truncate text-muted-foreground">
+                          {call.ai_summary || call.summary || call.status}
                         </TableCell>
                         <TableCell>{formatDate(call.created_at, tz)}</TableCell>
                       </TableRow>

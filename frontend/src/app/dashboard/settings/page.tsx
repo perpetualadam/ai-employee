@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import { CopySnippet } from "@/components/copy-snippet";
 import { DashboardShell } from "@/components/dashboard/shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +28,11 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [chatOrigin, setChatOrigin] = useState("");
+
+  useEffect(() => {
+    setChatOrigin(window.location.origin);
+  }, []);
 
   useEffect(() => {
     if (business) {
@@ -60,6 +66,22 @@ export default function SettingsPage() {
 
   const publicApiUrl =
     process.env.NEXT_PUBLIC_API_URL?.replace("/api/v1", "") ?? "http://localhost:8000";
+
+  const publicChatUrl = business?.public_slug
+    ? `${chatOrigin || ""}/chat/${business.public_slug}`
+    : "";
+
+  const websiteButtonSnippet = useMemo(() => {
+    if (!publicChatUrl) return "";
+    const label = business?.name ? `Chat with ${business.name}` : "Chat with us";
+    return `<a href="${publicChatUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:12px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-family:sans-serif;font-weight:600;">${label}</a>`;
+  }, [publicChatUrl, business?.name]);
+
+  const websiteEmbedSnippet = useMemo(() => {
+    if (!publicChatUrl) return "";
+    const title = business?.name ?? "Customer chat";
+    return `<iframe src="${publicChatUrl}" title="${title.replace(/"/g, "&quot;")}" style="width:100%;max-width:420px;height:640px;border:1px solid #e5e7eb;border-radius:8px;" loading="lazy"></iframe>`;
+  }, [publicChatUrl, business?.name]);
 
   if (authLoading) {
     return (
@@ -128,6 +150,51 @@ export default function SettingsPage() {
             <Button onClick={handleSave} disabled={saving}>
               {saving ? "Saving..." : "Save changes"}
             </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Customer web chat</CardTitle>
+            <CardDescription>
+              Share this link on your website, Google Business, or QR code — customers can book
+              without calling
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5 text-sm">
+            {business?.public_slug ? (
+              chatOrigin ? (
+                <>
+                  <CopySnippet
+                    label="Public chat URL"
+                    value={publicChatUrl}
+                    description="Paste this link on your website, Google Business profile, or QR code."
+                  />
+                  <CopySnippet
+                    label="Website button (HTML)"
+                    value={websiteButtonSnippet}
+                    description="Adds a “Chat with us” button that opens your receptionist in a new tab."
+                    multiline
+                  />
+                  <CopySnippet
+                    label="Embedded chat (HTML)"
+                    value={websiteEmbedSnippet}
+                    description="Embeds the chat window directly on a page on your site."
+                    multiline
+                  />
+                  <p className="text-muted-foreground">
+                    During a call, the AI can also send a continue link so customers finish intake
+                    online (voice handoff).
+                  </p>
+                </>
+              ) : (
+                <p className="text-muted-foreground">Loading your chat link…</p>
+              )
+            ) : (
+              <p className="text-muted-foreground">
+                Save your business profile to generate your public chat link.
+              </p>
+            )}
           </CardContent>
         </Card>
 

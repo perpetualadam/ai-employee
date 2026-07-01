@@ -1,5 +1,7 @@
 """Speech-to-text via TeXML Gather — wraps SpeechResult webhook field."""
 
+import re
+
 from app.voice.provider import TranscriptChunk
 
 
@@ -17,7 +19,12 @@ class GatherSpeechSTT:
 
     @staticmethod
     def is_empty(speech_result: str | None) -> bool:
-        return not speech_result or not speech_result.strip()
+        if not speech_result or not speech_result.strip():
+            return True
+        cleaned = speech_result.strip()
+        if re.fullmatch(r"[\s\.\+]+", cleaned):
+            return True
+        return False
 
     @staticmethod
     def extract_from_params(params: dict[str, str]) -> tuple[str | None, str | None]:

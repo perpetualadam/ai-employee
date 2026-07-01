@@ -39,11 +39,21 @@ class Settings(BaseSettings):
     public_api_url: str = "http://localhost:8000"
     deepgram_api_key: str = ""
     voice_mode: str = "gather"  # gather | stream
+    voice_gather_speech_timeout: int = 3  # seconds of silence after speech before Telnyx submits
+    voice_gather_timeout: int = 20  # max seconds to wait for caller to start speaking
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
     stripe_price_starter: str = ""
     stripe_price_pro: str = ""
     frontend_url: str = "http://localhost:3000"
+
+    # Email (SMTP) — optional; logs only when unset
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = ""
+    smtp_use_tls: bool = True
 
     @property
     def cors_origin_list(self) -> list[str]:

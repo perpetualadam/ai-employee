@@ -13,7 +13,7 @@ from app.ai.provider import AIMessage, AIProvider
 from app.ai.receptionist_tools import ReceptionistToolsImpl
 from app.ai.tools import RECEPTIONIST_TOOL_DEFINITIONS, ToolResult
 from app.models import AIActivityLog, Business, CallLog
-from app.models.enums import CallDirection, CallStatus
+from app.models.enums import CallDirection, CallStatus, ConversationChannel
 from app.services.business_service import BusinessServiceManager
 from app.services.notification_service import NotificationService
 
@@ -88,9 +88,10 @@ class ReceptionistAgent:
     ) -> dict:
         self._voice_mode = voice_mode
         self.tools_impl.voice_mode = voice_mode
-        self.tools_impl.user_turn_count = len(
-            entry for entry in history if entry.get("role") == "user"
+        self.tools_impl.user_turn_count = sum(
+            1 for entry in history if entry.get("role") == "user"
         ) + 1
+        self.tools_impl.current_user_message = user_message
         messages: list[AIMessage] = [self._build_system_message(voice_mode=voice_mode)]
 
         for entry in history:
@@ -243,6 +244,7 @@ def create_text_session(
     call = CallLog(
         id=str(uuid4()),
         business_id=business_id,
+        channel=ConversationChannel.WEB_CHAT,
         direction=CallDirection.INBOUND,
         status=CallStatus.IN_PROGRESS,
         caller_phone=caller_phone or "text-chat",

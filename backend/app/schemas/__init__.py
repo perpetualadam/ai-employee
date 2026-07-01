@@ -9,6 +9,7 @@ from app.models.enums import (
     AppointmentStatus,
     CallDirection,
     CallStatus,
+    ConversationChannel,
     EmergencyAction,
     Industry,
     JobStatus,
@@ -91,6 +92,7 @@ class BusinessResponse(BaseModel):
     ai_instructions: Optional[str]
     phone_number: Optional[str]
     escalation_phone: Optional[str]
+    public_slug: Optional[str]
     onboarding_completed: bool
     created_at: datetime
     updated_at: datetime
@@ -261,8 +263,123 @@ class CallLogResponse(BaseModel):
     caller_phone: Optional[str]
     duration_seconds: Optional[int]
     summary: Optional[str]
+    ai_summary: Optional[str] = None
     escalated: bool
     created_at: datetime
+
+
+# ── Conversations (unified inbox) ─────────────────────────────────────────────
+
+
+class ConversationLeadCard(BaseModel):
+    customer_name: Optional[str] = None
+    customer_phone: Optional[str] = None
+    service_address: Optional[str] = None
+    service_type: Optional[str] = None
+    appointment_time: Optional[datetime] = None
+    is_booked: bool = False
+    is_escalated: bool = False
+    is_emergency: bool = False
+
+
+class ConversationMessage(BaseModel):
+    role: Literal["user", "assistant", "system"]
+    content: str
+    channel: Optional[str] = None
+
+
+class ConversationListItem(BaseModel):
+    id: str
+    channel: ConversationChannel
+    channel_label: str
+    status: CallStatus
+    caller_phone: Optional[str]
+    summary: Optional[str]
+    ai_summary: Optional[str]
+    escalated: bool
+    is_booked: bool
+    created_at: datetime
+    lead_card: ConversationLeadCard
+
+
+class AIActivityDetailResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    action: str
+    tool_name: Optional[str]
+    input_data: Optional[dict[str, Any]]
+    output_data: Optional[dict[str, Any]]
+    created_at: datetime
+
+
+class ConversationDetailResponse(BaseModel):
+    id: str
+    business_id: str
+    customer_id: Optional[str]
+    channel: ConversationChannel
+    channel_label: str
+    status: CallStatus
+    caller_phone: Optional[str]
+    duration_seconds: Optional[int]
+    summary: Optional[str]
+    ai_summary: Optional[str]
+    escalated: bool
+    created_at: datetime
+    messages: list[ConversationMessage]
+    activities: list[AIActivityDetailResponse]
+    lead_card: ConversationLeadCard
+
+
+class AddressConfirmInfoResponse(BaseModel):
+    business_name: str
+    customer_name: Optional[str] = None
+    already_confirmed: bool = False
+    confirmed_address: Optional[str] = None
+
+
+class AddressConfirmRequest(BaseModel):
+    address: str = Field(min_length=5, max_length=500)
+
+
+class AddressConfirmResponse(BaseModel):
+    success: bool
+    address: Optional[str] = None
+    message: str
+
+
+class PublicChatHistoryMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=4000)
+
+
+class PublicChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+    history: list[PublicChatHistoryMessage] = Field(default_factory=list, max_length=50)
+    session_id: str | None = None
+    customer_phone: str | None = Field(default=None, max_length=32)
+
+
+class PublicChatResponse(BaseModel):
+    reply: str
+    session_id: str
+    tools_used: list[str]
+    escalated: bool
+    owner_notified: bool = False
+
+
+class PublicChatInfoResponse(BaseModel):
+    business_name: str
+    public_slug: str
+    phone_number: Optional[str] = None
+
+
+class PublicContinueInfoResponse(BaseModel):
+    business_name: str
+    session_id: str
+    phone_number: Optional[str] = None
+    messages: list[PublicChatHistoryMessage]
+    voice_handoff: bool = True
 
 
 class AIActivityResponse(BaseModel):

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.ai.receptionist_agent import ReceptionistAgent, get_ai_provider
 from app.config import get_settings
 from app.models import Business, CallLog
-from app.models.enums import CallDirection, CallStatus
+from app.models.enums import CallDirection, CallStatus, ConversationChannel
 from app.services.tenant import is_valid_uuid
 from app.domain.call import call_has_booking
 from app.domain.phone import normalize_phone
@@ -25,12 +25,25 @@ logger = logging.getLogger(__name__)
 
 
 def find_business_by_phone(db: Session, to_number: str) -> Business | None:
-    """Match inbound Telnyx number to a business phone_number."""
+    """Match inbound Telnyx number to a tenant business phone_number."""
     normalized = normalize_phone(to_number)
-    businesses = db.query(Business).filter(Business.phone_number.isnot(None)).all()
-    for biz in businesses:
+    if not normalized:
+        return None
+
+    for biz in db.query(Business).filter(Business.phone_number.isnot(None)).all():
         if biz.phone_number and normalize_phone(biz.phone_number) == normalized:
             return biz
+
+    # Single-tenant dev fallback: env Telnyx number maps to the only business.
+    settings = get_settings()
+    env_number = (
+        normalize_phone(settings.telnyx_phone_number) if settings.telnyx_phone_number else None
+    )
+    if env_number and env_number == normalized:
+        businesses = db.query(Business).all()
+        if len(businesses) == 1:
+            return businesses[0]
+
     return None
 
 
@@ -44,6 +57,7 @@ def create_voice_call(
         id=str(uuid4()),
         business_id=business.id,
         external_call_id=call_sid,
+        channel=ConversationChannel.VOICE,
         direction=CallDirection.INBOUND,
         status=CallStatus.IN_PROGRESS,
         caller_phone=caller_phone,

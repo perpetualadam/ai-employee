@@ -11,6 +11,7 @@ from app.database import Base
 # Import all models so Alembic detects them
 from app.models import (  # noqa: F401
     AIActivityLog,
+    AddressConfirmationToken,
     Appointment,
     Business,
     BusinessEmergencyRule,
@@ -19,6 +20,7 @@ from app.models import (  # noqa: F401
     Customer,
     Job,
     User,
+    WebContinuationToken,
 )
 
 config = context.config

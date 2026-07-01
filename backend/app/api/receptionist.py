@@ -2,7 +2,7 @@
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.ai.receptionist_agent import (
@@ -12,17 +12,27 @@ from app.ai.receptionist_agent import (
 )
 from app.config import get_settings
 from app.core.deps import require_active_subscription
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.models import Business, CallLog
 from app.schemas import ChatRequest, ChatResponse
+from app.services.conversation_summary_service import ConversationSummaryService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/receptionist", tags=["receptionist"])
 
 
+async def _summarize_conversation(call_log_id: str) -> None:
+    db = SessionLocal()
+    try:
+        await ConversationSummaryService.maybe_summarize(db, call_log_id)
+    finally:
+        db.close()
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat_with_receptionist(
     data: ChatRequest,
+    background_tasks: BackgroundTasks,
     business: Business = Depends(require_active_subscription),
     db: Session = Depends(get_db),
 ) -> ChatResponse:
@@ -59,6 +69,8 @@ async def chat_with_receptionist(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"AI receptionist error: {exc}",
         ) from exc
+
+    background_tasks.add_task(_summarize_conversation, session_id)
 
     return ChatResponse(
         reply=result["reply"],

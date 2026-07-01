@@ -121,14 +121,23 @@ RECEPTIONIST_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "create_customer",
-            "description": "Create a new customer record after collecting name, phone, and address",
+            "description": (
+                "Create a customer record after collecting name, phone, and a confirmed US service address "
+                "(house number, street name, street type, optional unit, city, state, ZIP)"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "name": {"type": "string"},
                     "phone": {"type": "string"},
                     "email": {"type": "string"},
-                    "address": {"type": "string", "description": "Service address where work is needed"},
+                    "address": {
+                        "type": "string",
+                        "description": (
+                            "Full US service address: house number, street name, street type, "
+                            "optional Apt/Suite/Unit, city, state, 5-digit ZIP"
+                        ),
+                    },
                 },
                 "required": ["name", "phone", "address"],
             },
@@ -146,6 +155,37 @@ RECEPTIONIST_TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "message": {"type": "string"},
                 },
                 "required": ["phone", "message"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_web_chat_link",
+            "description": (
+                "Create a web chat link so the caller can continue online — finish typing their "
+                "address, book an appointment, or complete intake when voice is difficult. "
+                "Prefer this over SMS when speech recognition fails. Voice calls only."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_address_confirmation_link",
+            "description": (
+                "Send the caller an SMS link to confirm their service address when speech "
+                "recognition keeps failing or the address is unclear. Voice calls only."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "customer_name": {
+                        "type": "string",
+                        "description": "Caller name if already collected",
+                    },
+                },
             },
         },
     },

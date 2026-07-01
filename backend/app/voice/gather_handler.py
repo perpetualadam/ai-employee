@@ -8,7 +8,9 @@ from app.models import Business
 from app.voice.call_service import get_call_log, process_speech_turn
 from app.voice.gather_prompts import (
     empty_gather_prompt,
-    is_truncated_speech,
+    is_low_confidence_speech,
+    is_unreliable_speech,
+    low_confidence_gather_prompt,
     truncated_gather_prompt,
 )
 from app.voice.stt.gather_stt import GatherSpeechSTT
@@ -45,9 +47,13 @@ async def handle_gather_result(
     )
     speech_confidence = getattr(chunk, "confidence", None)
 
-    if is_truncated_speech(chunk.text, speech_confidence):
+    if is_unreliable_speech(chunk.text, speech_confidence, call_log):
+        if is_low_confidence_speech(chunk.text, speech_confidence):
+            retry_prompt = low_confidence_gather_prompt(call_log)
+        else:
+            retry_prompt = truncated_gather_prompt(call_log)
         return build_say_and_gather(
-            truncated_gather_prompt(call_log),
+            retry_prompt,
             settings.public_api_url,
             call_log.id,
         )

@@ -5,7 +5,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import appointments, auth, billing, business, customers, dashboard, jobs, onboarding, receptionist, voice
+from app.api import appointments, auth, billing, business, conversations, customers, dashboard, jobs, onboarding, public, receptionist, sms, voice
 from app.config import get_settings
 from app.core.logging_config import setup_logging
 
@@ -35,6 +35,9 @@ app.include_router(customers.router, prefix=settings.api_v1_prefix)
 app.include_router(jobs.router, prefix=settings.api_v1_prefix)
 app.include_router(appointments.router, prefix=settings.api_v1_prefix)
 app.include_router(receptionist.router, prefix=settings.api_v1_prefix)
+app.include_router(conversations.router, prefix=settings.api_v1_prefix)
+app.include_router(public.router, prefix=settings.api_v1_prefix)
+app.include_router(sms.router, prefix=settings.api_v1_prefix)
 app.include_router(voice.router, prefix=settings.api_v1_prefix)
 app.include_router(billing.router, prefix=settings.api_v1_prefix)
 app.include_router(onboarding.router, prefix=settings.api_v1_prefix)

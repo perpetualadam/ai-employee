@@ -21,6 +21,7 @@ from tests.helpers import (
 
 def _voice_tools(state: VoiceSessionState) -> ReceptionistToolsImpl:
     db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = None
     notifications = MagicMock()
     business = sample_business()
     with patch.object(VoiceSessionState, "load", return_value=state):
@@ -32,6 +33,11 @@ def _voice_tools(state: VoiceSessionState) -> ReceptionistToolsImpl:
             voice_mode=True,
         )
     return tools
+
+
+def _caller_says(tools: ReceptionistToolsImpl, text: str) -> None:
+    """Simulate the current gather transcript passed into the agent."""
+    tools.current_user_message = text
 
 
 class VoiceReceptionistFlowSpecification(unittest.IsolatedAsyncioTestCase):
@@ -86,10 +92,20 @@ class VoiceReceptionistFlowSpecification(unittest.IsolatedAsyncioTestCase):
         placeholder = await tools.create_customer(
             "Caller",
             "+447492046947",
-            address="123 Main Street, Columbus, OH",
+            address="123 Main Street, Columbus, OH 43215",
         )
         self.assertFalse(placeholder.success)
         self.assertIn("name", placeholder.message.lower())
+
+    async def test_voice_create_customer_requires_caller_address(self) -> None:
+        tools = _voice_tools(fresh_voice_session())
+        result = await tools.create_customer(
+            "Brian Smith",
+            "+447492046947",
+            address="123 Main Street, Columbus, OH 43215",
+        )
+        self.assertFalse(result.success)
+        self.assertIn("caller must say", result.message.lower())
 
     @patch("app.ai.receptionist_tools.CustomerService.lookup_by_phone", return_value=None)
     @patch("app.ai.receptionist_tools.CustomerService.create_customer")
@@ -104,11 +120,13 @@ class VoiceReceptionistFlowSpecification(unittest.IsolatedAsyncioTestCase):
 
         state = fresh_voice_session()
         tools = _voice_tools(state)
+        address = "123 Main Street, Columbus, OH 43215"
+        _caller_says(tools, address)
 
         created = await tools.create_customer(
             "Brian Smith",
             "+447492046947",
-            address="123 Main Street, Columbus, OH 43215",
+            address=address,
         )
         self.assertTrue(created.success)
         self.assertTrue(state.intake_saved_this_call)
@@ -242,6 +260,8 @@ class VoiceReceptionistFlowSpecification(unittest.IsolatedAsyncioTestCase):
 
         state = fresh_voice_session()
         tools = _voice_tools(state)
+        address = "123 Main Street, Columbus, OH 43215"
+        _caller_says(tools, address)
 
         with patch(
             "app.ai.receptionist_tools.resolve_target_date",
@@ -250,7 +270,7 @@ class VoiceReceptionistFlowSpecification(unittest.IsolatedAsyncioTestCase):
             created = await tools.create_customer(
                 "Brian Smith",
                 "+447492046947",
-                address="123 Main Street, Columbus, OH 43215",
+                address=address,
             )
             availability = await tools.check_availability("tomorrow", "Kitchen leak")
 
@@ -313,10 +333,12 @@ class VoiceReceptionistFlowSpecification(unittest.IsolatedAsyncioTestCase):
             "app.ai.receptionist_tools.CustomerService.update_customer",
             side_effect=apply_update,
         ):
+            good_address = "456 Oak Avenue, Detroit, MI 48201"
+            _caller_says(tools, good_address)
             saved = await tools.create_customer(
                 "Brian Smith",
                 "+447492046947",
-                address="456 Oak Avenue, Detroit, MI 48201",
+                address=good_address,
             )
 
         self.assertTrue(saved.success)

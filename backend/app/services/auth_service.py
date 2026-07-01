@@ -56,6 +56,10 @@ class AuthService:
             trial_ends_at=datetime.now(UTC) + timedelta(days=TRIAL_DAYS),
         )
         db.add(biz)
+        db.flush()
+        from app.services.business_slug_service import BusinessSlugService
+
+        BusinessSlugService.ensure_unique_slug(db, biz)
         db.commit()
         db.refresh(user)
 
