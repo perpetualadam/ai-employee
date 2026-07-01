@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 
 import { DashboardShell } from "@/components/dashboard/shell";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -17,6 +17,7 @@ import {
 import { useDashboardAuth } from "@/hooks/use-dashboard-auth";
 import { api, ConversationDetail, formatDateTime } from "@/lib/api";
 import { getToken } from "@/lib/auth";
+import { cn } from "@/lib/utils";
 
 export default function ConversationDetailPage() {
   const router = useRouter();
@@ -55,9 +56,12 @@ export default function ConversationDetailPage() {
     <DashboardShell businessName={businessName}>
       <div className="space-y-6">
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="sm" asChild>
-            <Link href="/dashboard/conversations">Back to inbox</Link>
-          </Button>
+          <Link
+            href="/dashboard/conversations"
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+          >
+            Back to inbox
+          </Link>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">
               {lead.customer_name || detail.caller_phone || "Conversation"}
