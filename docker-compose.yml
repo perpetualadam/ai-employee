@@ -21,18 +21,27 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
+    env_file:
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgresql://aiemployee:aiemployee@db:5432/aiemployee
-      SECRET_KEY: dev-secret-change-in-production
-      DEBUG: "true"
-      CORS_ORIGINS: http://localhost:3000
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-production}
+      DEBUG: ${DEBUG:-true}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
+      AI_PROVIDER: ${AI_PROVIDER:-groq}
       TELNYX_API_KEY: ${TELNYX_API_KEY:-}
       TELNYX_PUBLIC_KEY: ${TELNYX_PUBLIC_KEY:-}
       TELNYX_ACCOUNT_SID: ${TELNYX_ACCOUNT_SID:-}
       TELNYX_PHONE_NUMBER: ${TELNYX_PHONE_NUMBER:-}
       TELNYX_MESSAGING_PROFILE_ID: ${TELNYX_MESSAGING_PROFILE_ID:-}
+      TELNYX_TEXML_CONNECTION_ID: ${TELNYX_TEXML_CONNECTION_ID:-}
+      SMS_PROVIDER: ${SMS_PROVIDER:-telnyx}
+      VOICE_PROVIDER: ${VOICE_PROVIDER:-telnyx}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-auto}
       PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
       VOICE_MODE: ${VOICE_MODE:-gather}
       VOICE_GATHER_SPEECH_TIMEOUT: ${VOICE_GATHER_SPEECH_TIMEOUT:-3}
@@ -42,9 +51,18 @@ services:
       STRIPE_PRICE_STARTER: ${STRIPE_PRICE_STARTER:-}
       STRIPE_PRICE_PRO: ${STRIPE_PRICE_PRO:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
       CRON_SECRET: ${CRON_SECRET:-}
       REMINDER_HOURS_BEFORE: ${REMINDER_HOURS_BEFORE:-24}
+      REMINDERS_ENABLED: ${REMINDERS_ENABLED:-true}
       SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-development}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}
     depends_on:
       db:
         condition: service_healthy
@@ -70,6 +88,8 @@ services:
       PUBLIC_API_URL: http://api:8000
       CRON_SECRET: ${CRON_SECRET:-}
       REMINDER_CRON_INTERVAL_SECONDS: ${REMINDER_CRON_INTERVAL_SECONDS:-3600}
+      REMINDER_STARTUP_RETRIES: ${REMINDER_STARTUP_RETRIES:-12}
+      REMINDER_STARTUP_RETRY_SECONDS: ${REMINDER_STARTUP_RETRY_SECONDS:-5}
     depends_on:
       api:
         condition: service_healthy

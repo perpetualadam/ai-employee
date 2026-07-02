@@ -62,7 +62,7 @@ Summary of the **original handover backlog** (2026-06-29) vs current state.
 
 | Priority | Item |
 |----------|------|
-| **P1** | Production deploy (VPS, HTTPS, Vercel frontend, managed Postgres, prod secrets) |
+| **P1** | Production deploy — **packaging done** (see `DEPLOY.md`); VPS/DNS/Vercel/webhooks still **manual** |
 | **P2** | ~~Transcript UI, real email, README, phone provisioning~~ | **Done** |
 | **P4** | Real-time voice streaming, reminders cron, outbound calls, monitoring |
 
@@ -249,11 +249,15 @@ Use `[x]` / `[ ]` when updating this list.
 
 ### P1 — Production deployment
 
-- [ ] Backend on VPS with HTTPS (replace ngrok)
-- [ ] Frontend on Vercel; `NEXT_PUBLIC_API_URL`
-- [ ] Managed PostgreSQL or backed-up volume
-- [ ] Prod secrets: `SECRET_KEY`, `DEBUG=false`, integration keys
-- [ ] Telnyx TeXML + Stripe webhooks → production URLs
+- [x] **Prod Docker stack** — `docker-compose.prod.yml` + Caddy TLS + scheduler profile
+- [x] **Env template** — `.env.production.example`
+- [x] **Cross-platform scripts** — `Makefile`, `scripts/setup.sh`, `scripts/prod-up.sh`, backup/restore
+- [x] **Vercel config** — `frontend/vercel.json`
+- [x] **Deploy runbook** — `DEPLOY.md` with manual checklist
+- [x] **Prod hardening** — `ALLOWED_HOSTS`, `/health/ready` in prod healthcheck, `DEBUG=false`
+- [ ] **User: VPS + DNS + secrets** — see DEPLOY.md "What you must do manually"
+- [ ] **User: Vercel deploy** — connect repo, set `NEXT_PUBLIC_API_URL`
+- [ ] **User: Telnyx + Stripe webhooks** → production HTTPS URLs
 
 ### P2 — Product gaps
 

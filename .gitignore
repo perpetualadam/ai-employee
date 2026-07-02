@@ -24,6 +24,7 @@ Thumbs.db
 
 # Docker
 postgres_data/
+backups/
 
 # Logs
 *.log

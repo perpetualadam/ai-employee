@@ -233,7 +233,27 @@ See `backend/app/ARCHITECTURE.md` and `HANDOVER.md` for agent handover notes.
 
 ## Deployment notes
 
-- **Frontend**: Vercel — set `NEXT_PUBLIC_API_URL`.
-- **Backend**: Docker on VPS with HTTPS.
-- **Database**: Managed PostgreSQL recommended for production.
+Full runbook: **[DEPLOY.md](DEPLOY.md)** (VPS + Vercel + webhooks + manual checklist).
+
+### macOS / Linux (local)
+
+```bash
+make setup
+make dev-scheduler   # optional reminders cron
+make frontend
+make test
+```
+
+### Production (summary)
+
+1. **VPS**: `cp .env.production.example .env` → fill values → `./scripts/prod-up.sh`
+2. **DNS**: A record `api.yourdomain.com` → VPS IP (Caddy handles HTTPS)
+3. **Vercel**: deploy `frontend/`, set `NEXT_PUBLIC_API_URL=https://api.yourdomain.com/api/v1`
+4. **Webhooks**: Telnyx + Stripe → production URLs (see DEPLOY.md)
+5. **Database**: managed PostgreSQL recommended; bundled Postgres available with `--bundled-db`
+
+### Windows (local)
+
+Use Docker Desktop — same as Quick start above (`docker compose up -d`). For production deploy, use a Linux VPS or WSL2.
+
 - **CI**: GitHub Actions runs backend tests + frontend lint/build on push to `main`.

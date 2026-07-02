@@ -1,0 +1,10 @@
+# Automatic HTTPS reverse proxy for the API.
+# Set API_DOMAIN and ACME_EMAIL in .env on the VPS.
+# Caddy substitutes {$VAR} from the container environment.
+
+{$API_DOMAIN} {
+	email {$ACME_EMAIL}
+
+	# Telnyx webhooks, voice gather, optional WebSocket stream mode
+	reverse_proxy api:8000
+}

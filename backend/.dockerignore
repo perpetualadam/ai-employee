@@ -1,0 +1,16 @@
+__pycache__
+*.py[cod]
+*.pyo
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+*.md
+tests
+scripts/live_feature_test.py
+scripts/deep_feature_test.py
+alembic/versions/__pycache__

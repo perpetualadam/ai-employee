@@ -224,7 +224,7 @@ External systems are wired through **`integrations/registry.py`** (composition r
 | Priority | Task |
 |----------|------|
 | P0 | User QA on text + voice booking paths |
-| P1 | Production deploy, HTTPS, prod env |
+| P1 | Production deploy — packaging in `DEPLOY.md`; user steps remain |
 | P2 | ~~Transcript UI, SMTP email, README~~ | **Done** (phone provisioning manual) |
 | P3 | ~~Text spec tests, CI, delete shims~~ | **Done** (2026-06-30) |
 | P4 | Stream mode, reminders, outbound, monitoring |

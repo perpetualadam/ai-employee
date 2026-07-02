@@ -4,6 +4,7 @@ import logging
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api import appointments, auth, billing, business, calls, conversations, customers, dashboard, internal, jobs, onboarding, phone, public, receptionist, sms, voice
 from app.config import get_settings
@@ -30,6 +31,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+if not settings.debug and "*" not in settings.allowed_host_list:
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_host_list)
 
 app.include_router(auth.router, prefix=settings.api_v1_prefix)
 app.include_router(business.router, prefix=settings.api_v1_prefix)

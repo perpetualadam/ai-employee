@@ -1,0 +1,108 @@
+# Production stack — Linux VPS (Ubuntu/Debian) or macOS with Docker Desktop.
+#
+# Quick start (managed Postgres — recommended):
+#   cp .env.production.example .env   # fill in values
+#   docker compose -f docker-compose.prod.yml --profile scheduler up -d --build
+#
+# Self-hosted Postgres on the same VPS (small installs):
+#   docker compose -f docker-compose.prod.yml --profile bundled-db --profile scheduler up -d --build
+#
+# Requires: API_DOMAIN + ACME_EMAIL in .env for automatic HTTPS via Caddy.
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    env_file: .env
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?Set API_DOMAIN in .env e.g. api.yourdomain.com}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in .env for Let's Encrypt}
+    depends_on:
+      api:
+        condition: service_healthy
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DEBUG: "false"
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+      CORS_ORIGINS: ${CORS_ORIGINS:?Set CORS_ORIGINS to your Vercel URL}
+      FRONTEND_URL: ${FRONTEND_URL:?Set FRONTEND_URL to your Vercel URL}
+      PUBLIC_API_URL: ${PUBLIC_API_URL:?Set PUBLIC_API_URL to https://API_DOMAIN}
+      CRON_SECRET: ${CRON_SECRET:?Set CRON_SECRET in .env}
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-2}"
+    depends_on:
+      db:
+        condition: service_healthy
+        required: false
+
+  scheduler:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PUBLIC_API_URL: http://api:8000
+      CRON_SECRET: ${CRON_SECRET:?Set CRON_SECRET in .env}
+      REMINDER_CRON_INTERVAL_SECONDS: ${REMINDER_CRON_INTERVAL_SECONDS:-3600}
+    command: python scripts/run_reminders.py
+    depends_on:
+      api:
+        condition: service_healthy
+    profiles:
+      - scheduler
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aiemployee}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD when using bundled-db}
+      POSTGRES_DB: ${POSTGRES_DB:-aiemployee}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-aiemployee} -d ${POSTGRES_DB:-aiemployee}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - bundled-db
+
+volumes:
+  caddy_data:
+  caddy_config:
+  postgres_data:

@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # CORS (comma-separated origins)
     cors_origins: str = "http://localhost:3000"
 
+    # Host header validation in production (comma-separated; * disables check)
+    allowed_hosts: str = "*"
+
     # Future integrations (Phase 3+)
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
@@ -71,6 +74,11 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def allowed_host_list(self) -> list[str]:
+        hosts = [host.strip() for host in self.allowed_hosts.split(",") if host.strip()]
+        return hosts if hosts else ["*"]
 
 
 @lru_cache
