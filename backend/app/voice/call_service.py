@@ -199,7 +199,7 @@ def handle_inbound_call(db: Session, call_sid: str, from_number: str, to_number:
         )
 
     call = create_voice_call(db, business, call_sid, from_number)
-    return build_greeting(business.name, settings.public_api_url, call.id)
+    return build_greeting(business, settings.public_api_url, call.id)
 
 
 def handle_call_status(

@@ -208,8 +208,14 @@ export const api = {
 
   // Onboarding
   getOnboardingStatus: () => request<OnboardingStatus>("/onboarding/status"),
+  getTrades: () => request<TradeOption[]>("/onboarding/trades"),
+  getCountries: () => request<CountryOption[]>("/onboarding/countries"),
   completeOnboarding: () => request<Business>("/onboarding/complete", { method: "POST" }),
-  seedDefaults: () => request<{ services: number; emergency_rules: number }>("/onboarding/seed-defaults", { method: "POST" }),
+  seedDefaults: () =>
+    request<{ services: number; emergency_rules: number; industry: string }>(
+      "/onboarding/seed-defaults",
+      { method: "POST" },
+    ),
   seedSampleData: () => request<{ customer_id: string; already_exists?: boolean }>("/onboarding/sample-data", { method: "POST" }),
 };
 
@@ -239,6 +245,18 @@ export interface Business {
   onboarding_completed: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface TradeOption {
+  value: string;
+  label: string;
+  services: string[];
+  emergency_rules: string[];
+}
+
+export interface CountryOption {
+  code: string;
+  label: string;
 }
 
 export interface PhoneProvisioningStatus {

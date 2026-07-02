@@ -16,17 +16,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { api, ApiError, Business } from "@/lib/api";
+import { api, ApiError, Business, CountryOption, TradeOption } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { cn } from "@/lib/utils";
-
-const INDUSTRIES = [
-  { value: "plumbing", label: "Plumbing" },
-  { value: "electrical", label: "Electrical" },
-  { value: "hvac", label: "HVAC" },
-  { value: "roofing", label: "Roofing" },
-  { value: "general", label: "General trades" },
-];
 
 const STEPS = [
   { title: "Welcome", description: "Let's set up your AI employee" },
@@ -46,9 +38,13 @@ function OnboardingWizard() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  const [trades, setTrades] = useState<TradeOption[]>([]);
+  const [countries, setCountries] = useState<CountryOption[]>([]);
+
   const [form, setForm] = useState({
     name: "",
     industry: "plumbing",
+    country: "US",
     timezone: "America/New_York",
     phone_number: "",
     escalation_phone: "",
@@ -71,6 +67,7 @@ function OnboardingWizard() {
         setForm({
           name: biz.name.endsWith("'s Business") ? "" : biz.name,
           industry: biz.industry,
+          country: biz.country || "US",
           timezone: biz.timezone,
           phone_number: biz.phone_number ?? "",
           escalation_phone: biz.escalation_phone ?? "",
@@ -79,7 +76,19 @@ function OnboardingWizard() {
       })
       .catch(() => router.replace("/login"))
       .finally(() => setLoading(false));
+
+    Promise.all([api.getTrades(), api.getCountries()])
+      .then(([tradeList, countryList]) => {
+        setTrades(tradeList);
+        setCountries(countryList);
+      })
+      .catch(() => {
+        /* fallback: step 1 still works with business.industry string */
+      });
   }, [router]);
+
+  const selectedTrade =
+    trades.find((t) => t.value === form.industry) ?? null;
 
   function goToStep(n: number) {
     router.push(`/onboarding?step=${n}`);
@@ -112,6 +121,7 @@ function OnboardingWizard() {
     await saveBusiness({
       name: form.name,
       industry: form.industry,
+      country: form.country,
       timezone: form.timezone,
     });
     goToStep(2);
@@ -239,23 +249,45 @@ function OnboardingWizard() {
                     id="biz-name"
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    placeholder="Mike's Plumbing"
+                    placeholder="Mike's Plumbing & Heating"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="industry">Industry</Label>
+                  <Label htmlFor="industry">Trade</Label>
                   <select
                     id="industry"
                     value={form.industry}
                     onChange={(e) => setForm({ ...form, industry: e.target.value })}
                     className="h-8 w-full rounded-lg border border-input bg-background px-2 text-sm"
                   >
-                    {INDUSTRIES.map((i) => (
-                      <option key={i.value} value={i.value}>
-                        {i.label}
-                      </option>
-                    ))}
+                    {(trades.length ? trades : [{ value: form.industry, label: form.industry, services: [], emergency_rules: [] }]).map(
+                      (i) => (
+                        <option key={i.value} value={i.value}>
+                          {i.label}
+                        </option>
+                      ),
+                    )}
                   </select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="country">Country</Label>
+                  <select
+                    id="country"
+                    value={form.country}
+                    onChange={(e) => setForm({ ...form, country: e.target.value })}
+                    className="h-8 w-full rounded-lg border border-input bg-background px-2 text-sm"
+                  >
+                    {(countries.length ? countries : [{ code: form.country, label: form.country }]).map(
+                      (c) => (
+                        <option key={c.code} value={c.code}>
+                          {c.label}
+                        </option>
+                      ),
+                    )}
+                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    Sets address format, phone rules, and regional compliance for your trade.
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="tz">Timezone</Label>
@@ -278,10 +310,15 @@ function OnboardingWizard() {
                   appointments and quoting jobs.
                 </p>
                 <ul className="rounded-lg border p-4 text-sm space-y-2">
-                  <li>• Drain cleaning (60 min)</li>
-                  <li>• Water heater repair (90 min)</li>
-                  <li>• Emergency leak repair (60 min, urgent)</li>
+                  {(selectedTrade?.services ?? ["General service call"]).map((svc) => (
+                    <li key={svc}>• {svc}</li>
+                  ))}
                 </ul>
+                {selectedTrade && selectedTrade.emergency_rules.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Emergency rules: {selectedTrade.emergency_rules.join(", ")}
+                  </p>
+                )}
                 <p className="text-sm text-muted-foreground">
                   You can add more services later in Settings.
                 </p>

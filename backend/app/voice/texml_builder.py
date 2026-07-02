@@ -3,6 +3,7 @@
 from html import escape
 from urllib.parse import urlencode
 
+from app.models import Business
 from app.config import get_settings
 
 VOICE = "Polly.Joanna"
@@ -59,12 +60,14 @@ def build_say_and_gather(
     )
 
 
-def build_greeting(business_name: str, base_url: str, call_log_id: str) -> str:
+def build_greeting(business: Business, base_url: str, call_log_id: str) -> str:
+    from app.domain.trades.registry import resolve_trade_context
+
+    trade = resolve_trade_context(business)
     greeting = (
-        f"Thank you for calling {business_name}. "
+        f"Thank you for calling {business.name}. "
         "I'm the AI receptionist. "
-        "After the tone, tell me what's going on — "
-        "for example a leak, a clogged drain, or no hot water."
+        f"After the tone, tell me what's going on — for example {trade.voice_greeting_example}."
     )
     return build_say_and_gather(greeting, base_url, call_log_id)
 

@@ -3,6 +3,7 @@
 import re
 
 from app.domain.intake import extract_spoken_name
+from app.domain.trades.registry import TradeContext
 
 _NAME_Q = re.compile(r"\b(name|who am I speaking|may I ask who)\b", re.I)
 _ADDRESS_Q = re.compile(
@@ -113,15 +114,16 @@ def _noise_hint() -> str:
     return "Sorry, it's a bit noisy. After the tone, speak clearly."
 
 
-def empty_gather_prompt(call_log) -> str:
+def empty_gather_prompt(call_log, trade: TradeContext | None = None) -> str:
     """Context-aware retry when Telnyx returns no speech."""
+    example = trade.voice_empty_gather_example if trade else "the problem you need help with"
     history = call_log.conversation_history or []
     has_user_turn = any(h.get("role") == "user" for h in history)
 
     if not has_user_turn:
         return (
             f"{_noise_hint()} "
-            "Tell me what's wrong — for example a kitchen leak or blocked drain."
+            f"Tell me what's wrong — for example {example}."
         )
 
     question = _last_assistant_question(call_log)
@@ -134,19 +136,20 @@ def empty_gather_prompt(call_log) -> str:
         if _ADDRESS_Q.search(question):
             return (
                 f"{_noise_hint()} "
-                "Please say the house number, street name, city, state, and ZIP code clearly."
+                "Please say the full service address clearly — street, city, and postcode or ZIP."
             )
         if _PROBLEM_Q.search(question):
             return (
                 f"{_noise_hint()} "
-                "Please tell me what plumbing issue you need help with."
+                f"Please tell me what you need help with — for example {example}."
             )
 
     return f"{_noise_hint()} Sorry, I didn't hear you. Please try again after the tone."
 
 
-def truncated_gather_prompt(call_log) -> str:
+def truncated_gather_prompt(call_log, trade: TradeContext | None = None) -> str:
     """Retry when STT only captured a fragment of the caller's sentence."""
+    example = trade.voice_empty_gather_example if trade else "the full problem"
     question = _last_assistant_question(call_log)
     if question:
         if _NAME_Q.search(question):
@@ -157,13 +160,12 @@ def truncated_gather_prompt(call_log) -> str:
         if _ADDRESS_Q.search(question):
             return (
                 f"{_noise_hint()} "
-                "I only caught part of the address. Please say the full street address, "
-                "city, state, and ZIP in one sentence."
+                "I only caught part of the address. Please say the full service address in one sentence."
             )
         if _PROBLEM_Q.search(question):
             return (
                 f"{_noise_hint()} "
-                "I only caught part of that. Please tell me the full plumbing problem."
+                f"I only caught part of that. Please describe the full issue — for example {example}."
             )
     return (
         f"{_noise_hint()} "
@@ -171,6 +173,6 @@ def truncated_gather_prompt(call_log) -> str:
     )
 
 
-def low_confidence_gather_prompt(call_log) -> str:
+def low_confidence_gather_prompt(call_log, trade: TradeContext | None = None) -> str:
     """Retry when Telnyx confidence is too low to trust the transcript."""
-    return truncated_gather_prompt(call_log)
+    return truncated_gather_prompt(call_log, trade)

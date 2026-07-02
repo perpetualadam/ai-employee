@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.domain.intake import normalize_caller_speech
+from app.domain.trades.registry import resolve_trade_context
 from app.models import Business
 from app.voice.call_service import get_call_log, process_speech_turn
 from app.voice.gather_prompts import (
@@ -34,9 +35,11 @@ async def handle_gather_result(
 
     settings = get_settings()
 
+    trade = resolve_trade_context(business)
+
     if GatherSpeechSTT.is_empty(speech_result):
         return build_say_and_gather(
-            empty_gather_prompt(call_log),
+            empty_gather_prompt(call_log, trade),
             settings.public_api_url,
             call_log.id,
         )
@@ -47,17 +50,17 @@ async def handle_gather_result(
     )
     speech_confidence = getattr(chunk, "confidence", None)
 
-    if is_unreliable_speech(chunk.text, speech_confidence, call_log):
-        if is_low_confidence_speech(chunk.text, speech_confidence):
-            retry_prompt = low_confidence_gather_prompt(call_log)
-        else:
-            retry_prompt = truncated_gather_prompt(call_log)
-        return build_say_and_gather(
-            retry_prompt,
-            settings.public_api_url,
-            call_log.id,
-        )
+        if is_unreliable_speech(chunk.text, speech_confidence, call_log):
+            if is_low_confidence_speech(chunk.text, speech_confidence):
+                retry_prompt = low_confidence_gather_prompt(call_log, trade)
+            else:
+                retry_prompt = truncated_gather_prompt(call_log, trade)
+            return build_say_and_gather(
+                retry_prompt,
+                settings.public_api_url,
+                call_log.id,
+            )
 
-    speech_text = normalize_caller_speech(chunk.text)
+    speech_text = normalize_caller_speech(chunk.text, business.industry)
     texml, _ = await process_speech_turn(db, call_log, business, speech_text)
     return texml

@@ -1,7 +1,8 @@
 """System prompts for the AI receptionist."""
 
 from app.ai.date_utils import format_date_context
-from app.domain.telecom import build_recovery_link_prompt_rules, get_address_format_hint
+from app.domain.telecom import build_recovery_link_prompt_rules
+from app.domain.trades.registry import resolve_trade_context
 from app.models import Business, BusinessEmergencyRule, BusinessService
 
 
@@ -14,6 +15,9 @@ def build_receptionist_prompt(
     voice_mode: bool = False,
     sms_functional: bool = False,
 ) -> str:
+    trade = resolve_trade_context(business)
+    address_hint = trade.address_hint
+
     service_lines = (
         "\n".join(
             f"- {s.name} ({s.duration_minutes} min)"
@@ -22,7 +26,7 @@ def build_receptionist_prompt(
             for s in services
         )
         if services
-        else "- General plumbing service (60 min)"
+        else trade.default_service_fallback
     )
 
     emergency_lines = (
@@ -33,12 +37,11 @@ def build_receptionist_prompt(
             if r.is_active
         )
         if emergency_rules
-        else "- Burst pipe, flooding, gas smell → escalate immediately"
+        else trade.emergency_fallback
     )
 
     hours_summary = _format_working_hours(business.working_hours)
     date_context = format_date_context(business.timezone)
-    address_hint = get_address_format_hint(business.country)
     recovery_rules = build_recovery_link_prompt_rules(
         sms_functional=sms_functional,
         voice_mode=voice_mode,
@@ -120,10 +123,14 @@ def build_receptionist_prompt(
         "Do NOT call check_availability or book_appointment on the first customer message."
     )
     problem_examples = (
-        "e.g. leak, clogged drain, no hot water). Listen carefully — use THEIR words for the service type "
-        "in check_availability and book_appointment."
+        trade.problem_examples_voice
         if voice_mode
-        else "e.g. no hot water, leak, clogged drain). Use their words for service_type."
+        else trade.problem_examples
+    )
+    problem_step = (
+        f"Listen carefully — use THEIR words for the service type in check_availability and book_appointment."
+        if voice_mode
+        else "Use their words for service_type."
     )
     workflow_heading = (
         "## Your workflow on every phone call"
@@ -135,17 +142,23 @@ def build_receptionist_prompt(
 {intake_intro}
 
 1. Greet the {"caller" if voice_mode else "customer"} warmly as the receptionist for {business.name}.
-2. Ask what they need help with ({problem_examples}
+2. Ask what they need help with ({problem_examples}). {problem_step}
 3. Ask for their full name and wait for their answer.
 {address_collect_step}
 {phone_intake_step}{confirm_intake_step}
 {create_customer_step}
 {post_create_step}"""
 
+    stt_line = f"- {trade.stt_mishear_note}" if trade.stt_mishear_note else ""
+    match_line = f"- {trade.tool_match_hint}" if trade.tool_match_hint else ""
+    compliance_block = ""
+    if trade.compliance_notes:
+        compliance_block = f"\n## Regulatory compliance ({trade.region})\n- {trade.compliance_notes}\n"
+
     if voice_mode:
         voice_rules = """
 ## Phone call rules — critical
-- Speech recognition often mis-hears words (e.g. "leak" as "week"). If the caller says "my name is having a week/leak", treat it as a misheard plumbing problem — ask what they need fixed, not for empathy about their week.
+{stt_line}
 - Intake order is always: problem → name → address → confirm address & phone → create_customer. Never ask for phone before address.
 - {us_address}
 - NEVER call create_customer until the caller confirmed the read-back of address and phone number.
@@ -162,7 +175,7 @@ def build_receptionist_prompt(
 - When confirming a booking, repeat the exact spoken_time of the slot that was booked.
 - NEVER call send_sms on phone calls — confirmation is spoken only.
 {recovery_rules}
-- Match service_type to what the caller described (e.g. kitchen leak → plumbing repair, not drain cleaning unless they said drain).
+{match_line}
 - When quoting appointment times, always say the time in the business timezone ({tz}) with the timezone name.
 - Keep each response to 1–2 short sentences. One question per turn.
 - If the caller says goodbye, thank you, or no further questions — say goodbye and stop. No more tools."""
@@ -170,6 +183,8 @@ def build_receptionist_prompt(
             tz=business.timezone,
             us_address=address_hint,
             recovery_rules=recovery_rules,
+            stt_line=stt_line,
+            match_line=match_line,
         )
     else:
         voice_rules = """
@@ -188,13 +203,13 @@ def build_receptionist_prompt(
 {recovery_rules}"""
         voice_rules = voice_rules.format(us_address=address_hint, recovery_rules=recovery_rules)
 
-    return f"""You are the AI receptionist for {business.name}, a {business.industry.value} business.
+    return f"""You are the AI receptionist for {business.name}, a {trade.label} business.
 
 Your job is to act like a professional, friendly receptionist — not a generic chatbot. You work 24/7 answering customer inquiries.
 
 ## Current date and time (use these — never guess dates)
 {date_context}
-
+{compliance_block}
 {workflow}
 {caller_context}
 ## Hard rules — never break these
@@ -230,8 +245,8 @@ Your job is to act like a professional, friendly receptionist — not a generic 
 - Pass datetimes to book_appointment in ISO 8601 UTC format using start_time_utc and end_time_utc from check_availability.
 - When check_availability returns slots, quote times in the business timezone shown in each slot's start_time field.
 - If the requested day is full, use next_slots / next_available_date from check_availability — never transfer_call just because one day has no openings.
-- A slow drip or leak under a sink is routine service (e.g. drain cleaning or general repair) — not Emergency leak repair unless water is actively flooding the home.
-- Use transfer_call only when: customer insists on speaking to a person, or a true emergency per the rules above (active flooding, gas smell, burst pipe).
+- Use the closest matching service from the list above for routine issues; use emergency services only when symptoms match emergency rules.
+- Use transfer_call only when: customer insists on speaking to a person, or a true emergency per the rules above.
 - Keep responses concise — callers hear this on the phone; ask one question at a time.
 - Never make up availability or customer data. Always use tools.{custom}"""
 

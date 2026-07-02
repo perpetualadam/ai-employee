@@ -2,6 +2,8 @@
 
 import re
 
+from app.models.enums import Industry
+
 _PLACEHOLDER_NAME = re.compile(
     r"^(caller|customer|unknown|guest|user|test|voice|new customer|phone caller)\b",
     re.I,
@@ -31,6 +33,11 @@ _NAME_INTRO = re.compile(
 
 _HAVING_PROBLEM = re.compile(
     r"(?:my name is|i'?m|i am|this is)\s+having\s+(?:a\s+)?(.+)",
+    re.I,
+)
+
+_UNIVERSAL_GARBLED_NAME = re.compile(
+    r"\b(having|leak|leaking|water|flood|flooding|clog)\b",
     re.I,
 )
 
@@ -67,13 +74,35 @@ US_ADDRESS_FORMAT_HINT = (
 )
 
 
-def is_valid_customer_name(name: str | None) -> bool:
+def _trade_garbled_pattern(industry: Industry | str | None) -> re.Pattern[str] | None:
+    if industry is None:
+        return None
+    from app.domain.trades.registry import get_trade_template
+
+    keywords = get_trade_template(industry).garbled_name_keywords
+    if not keywords:
+        return None
+    return re.compile(
+        r"\b(" + "|".join(re.escape(k) for k in sorted(keywords, key=len, reverse=True)) + r")\b",
+        re.I,
+    )
+
+
+def is_valid_customer_name(
+    name: str | None,
+    industry: Industry | str | None = None,
+) -> bool:
     cleaned = (name or "").strip()
     if len(cleaned) < 2:
         return False
     if _PLACEHOLDER_NAME.match(cleaned):
         return False
-    if _GARBLED_NAME.search(cleaned):
+    if _UNIVERSAL_GARBLED_NAME.search(cleaned):
+        return False
+    trade_pattern = _trade_garbled_pattern(industry)
+    if trade_pattern and trade_pattern.search(cleaned):
+        return False
+    if industry is None and _GARBLED_NAME.search(cleaned):
         return False
     return cleaned.lower() not in {
         "caller",
@@ -195,7 +224,7 @@ def address_appears_in_caller_text(address: str, caller_messages: list[str]) -> 
     return len(overlap) >= min_overlap
 
 
-def extract_spoken_name(text: str) -> str | None:
+def extract_spoken_name(text: str, industry: Industry | str | None = None) -> str | None:
     """Pull a name from phrases like 'my name is John Doe'."""
     if _HAVING_PROBLEM.search(text.strip()):
         return None
@@ -203,10 +232,10 @@ def extract_spoken_name(text: str) -> str | None:
     if not match:
         return None
     name = match.group(1).strip().strip(".")
-    return name if is_valid_customer_name(name) else None
+    return name if is_valid_customer_name(name, industry=industry) else None
 
 
-def normalize_caller_speech(text: str) -> str:
+def normalize_caller_speech(text: str, industry: Industry | str | None = None) -> str:
     """Normalize common STT phrasing so the agent receives clear intake."""
     cleaned = text.strip()
     having = _HAVING_PROBLEM.search(cleaned)
@@ -223,7 +252,7 @@ def normalize_caller_speech(text: str) -> str:
         return "I have a leak"
     if re.search(r"\bi'?m having a (?:water )?leak\b", cleaned, re.I):
         return "I have a water leak"
-    name = extract_spoken_name(cleaned)
+    name = extract_spoken_name(cleaned, industry=industry)
     if name:
         return f"My name is {name}"
     return cleaned

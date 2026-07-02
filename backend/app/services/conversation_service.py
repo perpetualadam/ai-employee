@@ -136,9 +136,9 @@ class ConversationService:
 
         service_type = appointment.service_type if appointment else None
         if not service_type:
-            service_type = ConversationService._infer_service_from_history(call)
+            service_type = ConversationService._infer_service_from_history(call, db)
 
-        emergency = call.escalated or ConversationService._looks_emergency(call)
+        emergency = call.escalated or ConversationService._looks_emergency(call, db)
 
         return ConversationLeadCard(
             customer_name=customer.name if customer else ConversationService._name_from_activity(db, call),
@@ -152,12 +152,21 @@ class ConversationService:
         )
 
     @staticmethod
-    def _infer_service_from_history(call: CallLog) -> str | None:
+    def _infer_service_from_history(call: CallLog, db: Session) -> str | None:
+        from app.domain.trades.registry import resolve_trade_context
+        from app.models import Business
+
+        business = db.query(Business).filter(Business.id == call.business_id).first()
+        keywords = (
+            resolve_trade_context(business).service_inference_keywords
+            if business
+            else frozenset()
+        )
         for entry in reversed(call.conversation_history or []):
             if entry.get("role") != "user":
                 continue
             text = (entry.get("content") or "").lower()
-            if any(k in text for k in ("leak", "hot water", "boiler", "drain", "pipe", "hvac", "heat")):
+            if keywords and any(k in text for k in keywords):
                 return entry.get("content", "")[:120]
         return None
 
@@ -179,10 +188,19 @@ class ConversationService:
         return None
 
     @staticmethod
-    def _looks_emergency(call: CallLog) -> bool:
+    def _looks_emergency(call: CallLog, db: Session) -> bool:
+        from app.domain.trades.registry import resolve_trade_context
+        from app.models import Business
+
+        business = db.query(Business).filter(Business.id == call.business_id).first()
+        keywords = (
+            resolve_trade_context(business).emergency_keywords
+            if business
+            else frozenset({"emergency", "urgent"})
+        )
         blob = " ".join(
             entry.get("content", "")
             for entry in (call.conversation_history or [])
             if entry.get("role") == "user"
         ).lower()
-        return any(k in blob for k in ("emergency", "flooding", "gas smell", "burst", "urgent"))
+        return any(k in blob for k in keywords)

@@ -8,6 +8,15 @@ class Industry(str, enum.Enum):
     ELECTRICAL = "electrical"
     HVAC = "hvac"
     ROOFING = "roofing"
+    GAS_ENGINEER = "gas_engineer"
+    MOBILE_MECHANIC = "mobile_mechanic"
+    PLASTERER = "plasterer"
+    CARPENTER = "carpenter"
+    LOCKSMITH = "locksmith"
+    PEST_CONTROL = "pest_control"
+    LANDSCAPING = "landscaping"
+    PAINTER = "painter"
+    APPLIANCE_REPAIR = "appliance_repair"
     GENERAL = "general"
 
 

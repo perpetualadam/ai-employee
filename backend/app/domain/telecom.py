@@ -251,3 +251,41 @@ def build_recovery_link_prompt_rules(*, sms_functional: bool, voice_mode: bool) 
         "- If name, address, or email keeps failing validation, call send_web_chat_link and "
         "tell them to open the link and type their details online (once per session only)."
     )
+
+
+_COUNTRY_LABELS: dict[str, str] = {
+    "US": "United States",
+    "CA": "Canada",
+    "GB": "United Kingdom",
+    "AU": "Australia",
+    "NZ": "New Zealand",
+    "JP": "Japan",
+    "CN": "China",
+    "RU": "Russia",
+    "DE": "Germany",
+    "FR": "France",
+    "IT": "Italy",
+    "ES": "Spain",
+    "NL": "Netherlands",
+    "BE": "Belgium",
+    "AT": "Austria",
+    "IE": "Ireland",
+    "PT": "Portugal",
+    "SE": "Sweden",
+    "DK": "Denmark",
+    "FI": "Finland",
+    "PL": "Poland",
+    "CZ": "Czech Republic",
+    "RO": "Romania",
+    "HU": "Hungary",
+    "GR": "Greece",
+}
+
+
+def get_supported_countries() -> list[dict[str, str]]:
+    """Countries with telecom/address profiles — for onboarding UI."""
+    codes = sorted(set(COUNTRY_DIAL_CODES) | set(ADDRESS_FORMAT_HINTS))
+    return [
+        {"code": code, "label": _COUNTRY_LABELS.get(code, code)}
+        for code in codes
+    ]

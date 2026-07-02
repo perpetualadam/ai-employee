@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.ai.date_utils import business_now, resolve_target_date
 from app.ai.tools import ToolResult
 from app.domain.email import is_plausible_email
+from app.domain.telecom import get_address_format_hint
 from app.domain.intake import (
     address_appears_in_caller_text,
     is_valid_customer_name,
@@ -80,6 +81,9 @@ class ReceptionistToolsImpl:
             messages.append(self.current_user_message)
         return messages
 
+    def _address_requirement(self) -> str:
+        return get_address_format_hint(self.business.country)
+
     def _require_address_from_caller(self, address: str | None) -> ToolResult | None:
         if not self.voice_mode:
             return None
@@ -88,9 +92,8 @@ class ReceptionistToolsImpl:
                 success=False,
                 data={},
                 message=(
-                    "The caller must say the full US address out loud — house number, street name, "
-                    "street type, city, state, and ZIP. Ask them to repeat it; do not combine "
-                    "fragments or guess."
+                    f"The caller must say the full service address out loud. {self._address_requirement()} "
+                    "Ask them to repeat it; do not combine fragments or guess."
                 ),
             )
         return None
@@ -290,13 +293,13 @@ class ReceptionistToolsImpl:
                     "one question per message."
                 ),
             )
-        if not is_valid_customer_name(name):
+        if not is_valid_customer_name(name, self.business.industry):
             return ToolResult(
                 success=False,
                 data={},
                 message=(
                     "Ask the caller for their full name first — do not guess or use a placeholder. "
-                    "If speech recognition put the plumbing problem in the name field, ask what issue "
+                    "If speech recognition put the service problem in the name field, ask what issue "
                     "they need help with, then ask for their real name."
                 ),
             )
@@ -307,7 +310,8 @@ class ReceptionistToolsImpl:
                     success=False,
                     data={},
                     message=(
-                        "Appointment is already booked. Ask for the complete US address "
+                        f"Appointment is already booked. Ask for the complete service address. "
+                        f"{self._address_requirement()} "
                         "(house number, street, city, state, ZIP) and call create_customer "
                         "again to update their record."
                     ),
@@ -396,7 +400,7 @@ class ReceptionistToolsImpl:
             update_data: dict[str, str] = {}
             if not is_valid_service_address(existing.address):
                 update_data["address"] = address.strip()
-            if not is_valid_customer_name(existing.name):
+            if not is_valid_customer_name(existing.name, self.business.industry):
                 update_data["name"] = name.strip()
             if update_data:
                 existing = CustomerService.update_customer(
@@ -404,7 +408,7 @@ class ReceptionistToolsImpl:
                     existing,
                     CustomerUpdate(**update_data),
                 )
-            if not is_valid_customer_name(existing.name) or not is_valid_service_address(existing.address):
+            if not is_valid_customer_name(existing.name, self.business.industry) or not is_valid_service_address(existing.address):
                 return ToolResult(
                     success=False,
                     data={},
@@ -575,8 +579,8 @@ class ReceptionistToolsImpl:
         else:
             message = (
                 "Address confirmation link was created but could not be delivered. "
-                "Ask the caller to spell their full US address slowly — house number, street, city, "
-                "state, and ZIP — or confirm their email address and try again."
+                f"Ask the caller to spell their full service address slowly. {self._address_requirement()} "
+                "Or confirm their email address and try again."
             )
         return ToolResult(
             success=bool(result.get("sent")),
@@ -746,7 +750,7 @@ class ReceptionistToolsImpl:
                 ),
             )
 
-        has_valid_name = is_valid_customer_name(customer.name)
+        has_valid_name = is_valid_customer_name(customer.name, self.business.industry)
         has_valid_address = is_valid_service_address(customer.address)
 
         if self.voice_mode:
