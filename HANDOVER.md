@@ -33,8 +33,12 @@ Summary of the **original handover backlog** (2026-06-29) vs current state.
 | Frontend | Receptionist: "Behind the scenes" tool log, `owner_notified` | `8d23252` / `21141b2` |
 | Frontend | Removed dev "Start a new session" escalation banner | `8d23252` |
 | Frontend | React duplicate key fix on tool badges | `8d23252` |
-| Quality | 32 automated spec tests (intake, slots, session, flow, webhooks) | `backend/tests/` |
+| Quality | 32+ automated spec tests; **5 text-chat tests**; CI on GitHub Actions | P3 2026-06-30 |
 | Quality | Cursor modular-architecture rule | `bd160e1` |
+| P3 | Text spec tests (`test_text_receptionist_spec.py`) | 2026-06-30 |
+| P3 | `.gitignore` for local env secrets file | 2026-06-30 |
+| P3 | GitHub Actions CI (backend tests + frontend lint/build) | `.github/workflows/ci.yml` |
+| P3 | Deleted deprecated voice re-export shims | 2026-06-30 |
 | Docs | This handover + `backend/app/ARCHITECTURE.md` | ongoing |
 
 ### Partially done — code in place, may need tuning or config
@@ -44,7 +48,6 @@ Summary of the **original handover backlog** (2026-06-29) vs current state.
 | Empty-gather / STT timing | Beep + retries shipped; **live US-local test** may still need timing tweaks |
 | Customer confirmation SMS | Works when `TELNYX_MESSAGING_PROFILE_ID` set; otherwise dev-log only |
 | Owner escalation SMS | Code path exists; **Telnyx 400** reported in dev — messaging profile / number config |
-| Deprecated re-export shims | Files still exist; **no imports remain** in `backend/app/` — safe to delete |
 
 ### Awaiting user verification (not confirmed in testing yet)
 
@@ -64,11 +67,9 @@ Summary of the **original handover backlog** (2026-06-29) vs current state.
 | **P2** | Real email (SMTP/SendGrid) |
 | **P2** | Automated per-tenant phone provisioning |
 | **P2** | Update README ("AI & Voice prepared, not yet wired" is outdated) |
-| **P3** | Text-chat-specific spec tests (`user_turn_count` path) |
-| **P3** | Add `*local env*` to `.gitignore` (`.env` already ignored) |
-| **P3** | Delete deprecated voice re-export shims |
-| **P3** | CI/CD (GitHub Actions) |
 | **P4** | Real-time voice streaming, reminders cron, outbound calls, monitoring |
+
+(P3 quality items — spec tests, gitignore, CI, shim cleanup — completed 2026-06-30.)
 
 ---
 
@@ -200,8 +201,8 @@ Full calendar: offer `next_slots` — never escalate for scheduling alone.
 | Owner escalation SMS 400 | Telnyx messaging config — `owner_notified: false` until fixed |
 | Test calendar clutter | Cancel appointments on **Dashboard → Calendar** |
 | README outdated | Still says voice "not yet wired" |
-| `ai employee local env.txt` | Untracked secrets file; not in `.gitignore` |
-| HANDOVER / ARCHITECTURE docs | Updated locally; **not yet committed** to GitHub |
+| `ai employee local env.txt` | Listed in `.gitignore` — never commit |
+| HANDOVER / ARCHITECTURE docs | Committed with P3 changes |
 
 ---
 
@@ -266,11 +267,10 @@ Use `[x]` / `[ ]` when updating this list.
 
 ### P3 — Quality & maintainability
 
-- [x] Automated spec tests (32)
-- [ ] Text-chat-specific spec tests
-- [ ] `.gitignore` for `*local env*`
-- [ ] Remove deprecated voice re-export shims (no app imports left)
-- [ ] CI/CD (GitHub Actions)
+- [x] Automated spec tests (full suite + 5 text-chat tests in `test_text_receptionist_spec.py`)
+- [x] `.gitignore` for `*local env*` / `ai employee local env.txt`
+- [x] CI/CD — `.github/workflows/ci.yml` (backend tests + frontend lint/build on `main`)
+- [x] Removed deprecated voice re-export shims (`intake_utils`, `phone_utils`, `voice_intent`)
 
 ### P4 — Post-MVP optional
 

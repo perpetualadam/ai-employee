@@ -5,6 +5,8 @@ __pycache__/
 .venv/
 venv/
 .env
+*local env*
+ai employee local env.txt
 
 # Node
 node_modules/

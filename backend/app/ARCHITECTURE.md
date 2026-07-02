@@ -35,7 +35,7 @@ What is **built and on `main`** vs what remains.
 | Call transcript HTTP API + UI | Data in DB; no dedicated route |
 | Real email delivery | Logs only |
 | Automated phone number provisioning | Manual Telnyx + Settings |
-| CI pipeline | None |
+| CI pipeline | `.github/workflows/ci.yml` on push/PR to `main` |
 | Outbound calling | Schema only |
 
 ### Needs live verification (code complete, QA pending)
@@ -156,23 +156,23 @@ State is rebuilt from prior tool logs in `VoiceSessionState.apply_voice_activity
 
 ## Spec tests
 
-Run inside the API container:
+Run inside the API container (or locally with `PYTHONPATH=.` from `backend/`):
 
 ```bash
 docker compose exec api python -m unittest discover -s tests -v
 ```
 
-**Current:** 32 tests, all passing.
+| File | Covers |
+|------|--------|
+| `test_intake_spec.py` | Name/address validation |
+| `test_voice_session_spec.py` | Session guards (voice + text via `VoiceSessionState`) |
+| `test_voice_slots_spec.py` | Slot formatting, exact-time booking |
+| `test_voice_receptionist_spec.py` | End-to-end voice tool flow across turns |
+| `test_text_receptionist_spec.py` | Text chat: `user_turn_count`, same-turn book, SMS dedup |
+| `test_webhook_auth.py` | Telnyx webhook signatures |
+| `test_*_spec.py` (others) | Conversations, gather prompts, public chat, etc. |
 
-| File | Covers | Gap |
-|------|--------|-----|
-| `test_intake_spec.py` | Name/address validation | — |
-| `test_voice_session_spec.py` | Session guards | Shared with text via `VoiceSessionState` |
-| `test_voice_slots_spec.py` | Slot formatting, exact-time booking | — |
-| `test_voice_receptionist_spec.py` | End-to-end tool flow across turns | Voice-oriented; text `user_turn_count` not explicit |
-| `test_webhook_auth.py` | Telnyx webhook signatures | — |
-
-**Backlog:** add `test_text_receptionist_spec.py` for `user_turn_count` and text-mode tool sequencing.
+CI (`.github/workflows/ci.yml`) runs the full suite on every push/PR to `main`.
 
 ---
 
@@ -181,19 +181,11 @@ docker compose exec api python -m unittest discover -s tests -v
 - **New business rule** (name validation, address rules) → `domain/`
 - **New CRM/calendar behavior** → `services/` + wire in `ai/receptionist_tools.py`
 - **New voice UX** (prompts, STT handling) → `voice/` only
-- **New text-chat UX** → `ai/prompts.py` (text workflow section) + guards in `receptionist_tools.py` / `session_state.py` if enforceable
+- **New text-chat UX** → `ai/prompts.py` + guards in `receptionist_tools.py` / `session_state.py`
 - **New HTTP endpoint** → `api/` + existing service
 - **New external provider** → implement `ai/provider.py` or `voice/provider.py` ABC
 
----
-
-## Deprecated re-exports (safe to remove)
-
-These files remain for backward compatibility. **No imports from them exist in `backend/app/`** as of 2026-06-30 — delete when convenient:
-
-- `voice/intake_utils.py` → use `domain/intake.py`
-- `voice/phone_utils.py` → use `domain/phone.py`
-- `voice/voice_intent.py` → use `voice/conversation.py`, `voice/gather_prompts.py`, `domain/call.py`
+When changing booking behavior, update **prompts + session guards + spec tests** together.
 
 ---
 
@@ -204,7 +196,7 @@ These files remain for backward compatibility. **No imports from them exist in `
 | P0 | User QA on text + voice booking paths |
 | P1 | Production deploy, HTTPS, prod env |
 | P2 | `GET /calls/{id}` or similar for full transcript; real email |
-| P3 | Text spec tests, CI, delete shims above |
+| P3 | ~~Text spec tests, CI, delete shims~~ | **Done** (2026-06-30) |
 | P4 | Stream mode, reminders, outbound, monitoring |
 
 See root `HANDOVER.md` for full product-wide backlog.

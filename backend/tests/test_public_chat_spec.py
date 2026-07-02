@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from app.domain.slug import is_valid_public_slug, slugify_business_name
 from app.services.business_slug_service import BusinessSlugService
@@ -21,9 +21,13 @@ class PublicSlugSpecification(unittest.TestCase):
         business.name = "Joe Plumbing"
         business.public_slug = None
 
-        taken = MagicMock()
-        taken.public_slug = "joe-plumbing"
-        db.query.return_value.filter.return_value.first.side_effect = [taken, None]
+        with patch.object(
+            BusinessSlugService,
+            "_slug_taken",
+            side_effect=[True, False],
+        ) as taken_mock:
+            slug = BusinessSlugService.ensure_unique_slug(db, business, base="Joe Plumbing")
 
-        slug = BusinessSlugService.ensure_unique_slug(db, business, base="Joe Plumbing")
         self.assertEqual(slug, "joe-plumbing-2")
+        taken_mock.assert_any_call(db, "joe-plumbing", exclude_id="biz-1")
+        taken_mock.assert_any_call(db, "joe-plumbing-2", exclude_id="biz-1")

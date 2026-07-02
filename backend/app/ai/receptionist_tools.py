@@ -21,7 +21,7 @@ from app.services.appointment_service import AppointmentService
 from app.services.customer_service import CustomerService
 from app.services.notification_service import NotificationService
 from app.voice.session_state import VoiceSessionState
-from app.voice.slots import parse_datetime_utc
+from app.voice.slots import parse_datetime_utc, spoken_local_time
 
 logger = logging.getLogger(__name__)
 
@@ -176,7 +176,10 @@ class ReceptionistToolsImpl:
 
             tz = ZoneInfo(self.business.timezone)
             local_start = appt.start_time.astimezone(tz)
-            local_label = local_start.strftime("%A %B %-d at %-I:%M %p").replace("  ", " ")
+            local_label = (
+                f"{local_start.strftime('%A %B')} {local_start.day} "
+                f"at {spoken_local_time(local_start)}"
+            )
 
             return ToolResult(
                 success=True,
