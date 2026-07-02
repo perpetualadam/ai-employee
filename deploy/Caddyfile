@@ -1,10 +1,13 @@
-# Automatic HTTPS reverse proxy for the API.
-# Set API_DOMAIN and ACME_EMAIL in .env on the VPS.
-# Caddy substitutes {$VAR} from the container environment.
+# Automatic HTTPS — app (Next.js) + API (FastAPI).
+# Set APP_DOMAIN, API_DOMAIN, and ACME_EMAIL in .env.
+
+{$APP_DOMAIN} {
+	email {$ACME_EMAIL}
+	reverse_proxy frontend:3000
+}
 
 {$API_DOMAIN} {
 	email {$ACME_EMAIL}
-
 	# Telnyx webhooks, voice gather, optional WebSocket stream mode
 	reverse_proxy api:8000
 }

@@ -25,8 +25,11 @@ frontend:
 prod:
 	@./scripts/prod-up.sh
 
+prod-all:
+	@./scripts/prod-up.sh --all
+
 prod-bundled:
-	@./scripts/prod-up.sh --bundled-db
+	@./scripts/prod-up.sh --all
 
 prod-logs:
 	docker compose -f docker-compose.prod.yml logs -f api caddy scheduler

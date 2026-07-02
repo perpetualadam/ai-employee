@@ -53,36 +53,79 @@ cd frontend; npm install; npm run dev
 
 ## Production architecture
 
+### Option A — Everything on one VPS (recommended for simplicity)
+
 ```
-                    ┌─────────────┐
-  Users ──────────► │   Vercel    │  Next.js frontend
-                    │  app.domain │
-                    └──────┬──────┘
-                           │ HTTPS API calls
-                           ▼
-                    ┌─────────────┐
-                    │   Caddy     │  :443 TLS (Let's Encrypt)
-                    │ api.domain  │
-                    └──────┬──────┘
-                           │
-                    ┌──────▼──────┐     ┌──────────────────┐
-                    │  FastAPI    │────►│ Managed Postgres │
-                    │  (Docker)   │     │ Neon/Supabase/RDS│
-                    └──────┬──────┘     └──────────────────┘
-                           │
-              ┌────────────┼────────────┐
-              ▼            ▼            ▼
-           Groq API    Telnyx       Stripe
+                         ┌─────────────────────────────────────┐
+  Users ───────────────► │              Linux VPS              │
+                         │  ┌─────────┐  ┌─────────┐  ┌──────┐ │
+                         │  │  Caddy  │  │ Next.js │  │ API  │ │
+                         │  │  :443   │──│  :3000  │  │:8000 │ │
+                         │  └────┬────┘  └─────────┘  └──┬───┘ │
+                         │       │                        │    │
+                         │       │                   ┌────▼───┐ │
+                         │       │                   │Postgres│ │
+                         │       │                   └────────┘ │
+                         └───────┼──────────────────────────────┘
+                                 │
+                    Groq / Telnyx / Stripe (external APIs)
 ```
+
+```bash
+./scripts/prod-up.sh --all
+```
+
+### Option B — Split (managed Postgres and/or Vercel frontend)
+
+```
+  Vercel (frontend) ──► Caddy on VPS (API) ──► Managed Postgres
+```
+
+See sections below if you prefer external database or Vercel for the frontend only.
 
 ---
 
-## VPS deployment (backend)
+## Full stack on one VPS
+
+Best when you want **one bill, one server, full control**. Good for launch traffic if sized correctly.
+
+### Server specs
+
+| Launch interest | vCPU | RAM | Disk |
+|-----------------|------|-----|------|
+| Soft launch | 2 | 4 GB | 40 GB SSD |
+| **Public launch / fair interest** | **4** | **8 GB** | **80 GB SSD** |
+| Heavy spike headroom | 4–8 | 16 GB | 100 GB SSD |
+
+Runs on the same box: **Caddy** (TLS) + **Next.js** + **FastAPI** (4 workers) + **Postgres** + **reminder scheduler**.
+
+### DNS (both subdomains → same VPS IP)
+
+| Record | Name | Value |
+|--------|------|-------|
+| A | `app.yourdomain.com` | VPS public IP |
+| A | `api.yourdomain.com` | VPS public IP |
+
+### Start
+
+```bash
+cp .env.production.example .env
+# Set APP_DOMAIN, API_DOMAIN, POSTGRES_PASSWORD, secrets, API keys
+chmod +x scripts/*.sh
+./scripts/prod-up.sh --all
+```
+
+Open **https://app.yourdomain.com** — no Vercel needed.
+
+---
+
+## VPS deployment
 
 ### 1. Server requirements
 
 - Ubuntu 22.04+ or Debian 12+ (or any Linux with Docker)
-- 2 GB RAM minimum (4 GB recommended)
+- **Full stack (`--all`):** 4 vCPU, **8 GB RAM**, 80 GB SSD recommended for launch
+- **API only (external DB):** 2 vCPU, 4 GB RAM minimum
 - Ports **80** and **443** open
 - A domain name you control
 
@@ -115,36 +158,39 @@ openssl rand -hex 24   # CRON_SECRET
 
 | Variable | Example |
 |----------|---------|
+| `APP_DOMAIN` | `app.yourdomain.com` |
 | `API_DOMAIN` | `api.yourdomain.com` |
+| `NEXT_PUBLIC_API_URL` | `https://api.yourdomain.com/api/v1` |
 | `ACME_EMAIL` | `you@yourdomain.com` |
 | `PUBLIC_API_URL` | `https://api.yourdomain.com` |
 | `FRONTEND_URL` | `https://app.yourdomain.com` |
 | `CORS_ORIGINS` | `https://app.yourdomain.com` |
 | `ALLOWED_HOSTS` | `api.yourdomain.com` |
-| `DATABASE_URL` | `postgresql://...?sslmode=require` |
+| `DATABASE_URL` | `postgresql://aiemployee:PASSWORD@db:5432/aiemployee` (with `--all`) |
+| `POSTGRES_PASSWORD` | strong password (with `--all`) |
 | `DEBUG` | `false` |
+| `UVICORN_WORKERS` | `4` for launch traffic |
 
 ### 4. DNS
 
-Create an **A record** pointing `api.yourdomain.com` → your VPS public IP.
+Create **A records** for `app.yourdomain.com` and `api.yourdomain.com` → VPS public IP.
 
 Wait for DNS propagation before starting Caddy (Let's Encrypt needs this).
 
 ### 5. Start production stack
 
-**Managed Postgres (recommended):**
+**Everything on one VPS (app + API + Postgres):**
 
 ```bash
 chmod +x scripts/*.sh
-./scripts/prod-up.sh
+./scripts/prod-up.sh --all
 ```
 
-**Bundled Postgres on same VPS (small installs only):**
+**App + API on VPS, managed Postgres elsewhere:**
 
 ```bash
-# Set DATABASE_URL=postgresql://aiemployee:PASSWORD@db:5432/aiemployee
-# Set POSTGRES_PASSWORD in .env
-./scripts/prod-up.sh --bundled-db
+# DATABASE_URL=postgresql://...?sslmode=require in .env
+./scripts/prod-up.sh
 ```
 
 ### 6. Verify
@@ -157,7 +203,9 @@ curl -s https://api.yourdomain.com/health
 
 ---
 
-## Frontend deployment (Vercel)
+## Frontend deployment (Vercel — optional)
+
+Skip this section if you use **`./scripts/prod-up.sh --all`** (frontend runs in Docker on your VPS).
 
 1. Import the GitHub repo at [vercel.com](https://vercel.com).
 2. Set **Root Directory** to `frontend`.

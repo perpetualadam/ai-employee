@@ -11,8 +11,18 @@ if [ ! -f .env ]; then
 fi
 
 PROFILES=(--profile scheduler)
-if [ "${1:-}" = "--bundled-db" ]; then
+MODE="${1:-}"
+
+if [ "$MODE" = "--all" ] || [ "$MODE" = "--bundled-db" ]; then
   PROFILES+=(--profile bundled-db)
+  echo "Starting full stack: app + API + Postgres + scheduler on this VPS."
+elif [ -n "$MODE" ]; then
+  echo "Unknown option: $MODE"
+  echo "Usage: $0 [--all]"
+  echo "  --all   Include Postgres on this VPS (everything on one server)"
+  exit 1
+else
+  echo "Starting app + API + scheduler (external DATABASE_URL required)."
 fi
 
 docker compose -f docker-compose.prod.yml "${PROFILES[@]}" up -d --build
@@ -20,7 +30,8 @@ docker compose -f docker-compose.prod.yml "${PROFILES[@]}" up -d --build
 echo ""
 echo "Production stack starting. Check status:"
 echo "  docker compose -f docker-compose.prod.yml ps"
-echo "  docker compose -f docker-compose.prod.yml logs -f api caddy"
+echo "  docker compose -f docker-compose.prod.yml logs -f api frontend caddy"
 echo ""
-echo "Health (after DNS points to this server):"
-echo "  curl -s https://\${API_DOMAIN}/health/ready"
+echo "After DNS points both domains to this server:"
+echo "  App:  https://\${APP_DOMAIN}"
+echo "  API:  curl -s https://\${API_DOMAIN}/health/ready"

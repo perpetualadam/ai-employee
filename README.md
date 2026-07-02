@@ -246,11 +246,14 @@ make test
 
 ### Production (summary)
 
-1. **VPS**: `cp .env.production.example .env` → fill values → `./scripts/prod-up.sh`
-2. **DNS**: A record `api.yourdomain.com` → VPS IP (Caddy handles HTTPS)
-3. **Vercel**: deploy `frontend/`, set `NEXT_PUBLIC_API_URL=https://api.yourdomain.com/api/v1`
-4. **Webhooks**: Telnyx + Stripe → production URLs (see DEPLOY.md)
-5. **Database**: managed PostgreSQL recommended; bundled Postgres available with `--bundled-db`
+**Everything on one VPS (simplest):**
+
+1. VPS **4 vCPU / 8 GB RAM / 80 GB SSD**
+2. DNS: `app.` and `api.` → VPS IP
+3. `cp .env.production.example .env` → fill values
+4. `./scripts/prod-up.sh --all`
+
+**Split setup:** API (+ optional frontend) on VPS, managed Postgres or Vercel — see **[DEPLOY.md](DEPLOY.md)**.
 
 ### Windows (local)
 

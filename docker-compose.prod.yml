@@ -1,13 +1,13 @@
-# Production stack — Linux VPS (Ubuntu/Debian) or macOS with Docker Desktop.
+# Production stack — full VPS or split (managed Postgres + VPS frontend/API).
 #
-# Quick start (managed Postgres — recommended):
-#   cp .env.production.example .env   # fill in values
-#   docker compose -f docker-compose.prod.yml --profile scheduler up -d --build
+# Full stack on one VPS (app + API + Postgres + scheduler):
+#   cp .env.production.example .env
+#   ./scripts/prod-up.sh --all
 #
-# Self-hosted Postgres on the same VPS (small installs):
-#   docker compose -f docker-compose.prod.yml --profile bundled-db --profile scheduler up -d --build
+# API + frontend on VPS, managed Postgres elsewhere:
+#   ./scripts/prod-up.sh
 #
-# Requires: API_DOMAIN + ACME_EMAIL in .env for automatic HTTPS via Caddy.
+# Requires: APP_DOMAIN, API_DOMAIN, ACME_EMAIL in .env
 
 services:
   caddy:
@@ -22,11 +22,36 @@ services:
       - caddy_config:/config
     env_file: .env
     environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN in .env e.g. app.yourdomain.com}
       API_DOMAIN: ${API_DOMAIN:?Set API_DOMAIN in .env e.g. api.yourdomain.com}
       ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in .env for Let's Encrypt}
     depends_on:
       api:
         condition: service_healthy
+      frontend:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?Set NEXT_PUBLIC_API_URL e.g. https://api.yourdomain.com/api/v1}
+    restart: unless-stopped
+    expose:
+      - "3000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
 
   api:
     build:
@@ -38,8 +63,8 @@ services:
       DEBUG: "false"
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
-      CORS_ORIGINS: ${CORS_ORIGINS:?Set CORS_ORIGINS to your Vercel URL}
-      FRONTEND_URL: ${FRONTEND_URL:?Set FRONTEND_URL to your Vercel URL}
+      CORS_ORIGINS: ${CORS_ORIGINS:?Set CORS_ORIGINS to https://APP_DOMAIN}
+      FRONTEND_URL: ${FRONTEND_URL:?Set FRONTEND_URL to https://APP_DOMAIN}
       PUBLIC_API_URL: ${PUBLIC_API_URL:?Set PUBLIC_API_URL to https://API_DOMAIN}
       CRON_SECRET: ${CRON_SECRET:?Set CRON_SECRET in .env}
     expose:
@@ -86,7 +111,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-aiemployee}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD when using bundled-db}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD when using --all}
       POSTGRES_DB: ${POSTGRES_DB:-aiemployee}
     volumes:
       - postgres_data:/var/lib/postgresql/data
