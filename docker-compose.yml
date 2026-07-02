@@ -42,12 +42,40 @@ services:
       STRIPE_PRICE_STARTER: ${STRIPE_PRICE_STARTER:-}
       STRIPE_PRICE_PRO: ${STRIPE_PRICE_PRO:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      CRON_SECRET: ${CRON_SECRET:-}
+      REMINDER_HOURS_BEFORE: ${REMINDER_HOURS_BEFORE:-24}
+      SENTRY_DSN: ${SENTRY_DSN:-}
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live', timeout=3)",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  scheduler:
+    build: ./backend
+    environment:
+      PUBLIC_API_URL: http://api:8000
+      CRON_SECRET: ${CRON_SECRET:-}
+      REMINDER_CRON_INTERVAL_SECONDS: ${REMINDER_CRON_INTERVAL_SECONDS:-3600}
+    depends_on:
+      api:
+        condition: service_healthy
+    command: python scripts/run_reminders.py
+    profiles:
+      - scheduler
 
 volumes:
   postgres_data:

@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 
 import { DashboardShell } from "@/components/dashboard/shell";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -15,7 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useDashboardAuth } from "@/hooks/use-dashboard-auth";
-import { api, ConversationDetail, formatDateTime } from "@/lib/api";
+import { api, ApiError, ConversationDetail, formatDateTime } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +26,8 @@ export default function ConversationDetailPage() {
   const { businessName, business, loading: authLoading } = useDashboardAuth();
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [calling, setCalling] = useState(false);
+  const [callMessage, setCallMessage] = useState("");
 
   useEffect(() => {
     if (authLoading) return;
@@ -51,6 +53,23 @@ export default function ConversationDetailPage() {
   }
 
   const lead = detail.lead_card;
+
+  async function handleCallBack() {
+    setCalling(true);
+    setCallMessage("");
+    try {
+      const result = await api.placeOutboundCall({
+        customer_id: detail.customer_id ?? undefined,
+        phone: lead.customer_phone ?? detail.caller_phone ?? undefined,
+        reason: detail.ai_summary || detail.summary || undefined,
+      });
+      setCallMessage(result.message);
+    } catch (err) {
+      setCallMessage(err instanceof ApiError ? err.message : "Could not place call");
+    } finally {
+      setCalling(false);
+    }
+  }
 
   return (
     <DashboardShell businessName={businessName}>
@@ -90,6 +109,22 @@ export default function ConversationDetailPage() {
             {detail.ai_summary && (
               <p className="sm:col-span-2 rounded-md bg-muted p-3">{detail.ai_summary}</p>
             )}
+            {(lead.customer_phone || detail.caller_phone) && (
+              <div className="sm:col-span-2 flex flex-wrap items-center gap-3 pt-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={calling}
+                  onClick={handleCallBack}
+                >
+                  {calling ? "Calling…" : "Call customer back"}
+                </Button>
+                {callMessage && (
+                  <p className="text-sm text-muted-foreground">{callMessage}</p>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -98,8 +133,12 @@ export default function ConversationDetailPage() {
             <CardTitle>Transcript</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {detail.messages.length === 0 ? (
+            {detail.messages.length === 0 && !detail.transcript ? (
               <p className="text-sm text-muted-foreground">No messages recorded.</p>
+            ) : detail.messages.length === 0 && detail.transcript ? (
+              <pre className="whitespace-pre-wrap rounded-lg bg-muted p-3 text-sm font-sans">
+                {detail.transcript}
+              </pre>
             ) : (
               detail.messages.map((msg, i) => (
                 <div

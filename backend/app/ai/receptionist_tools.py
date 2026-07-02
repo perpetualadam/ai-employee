@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.date_utils import business_now, resolve_target_date
 from app.ai.tools import ToolResult
+from app.domain.email import is_plausible_email
 from app.domain.intake import (
     address_appears_in_caller_text,
     is_valid_customer_name,
@@ -55,8 +56,9 @@ class ReceptionistToolsImpl:
         return self._session.require_intake(action)
 
     def _resolve_phone(self, phone: str) -> str:
-        resolved = resolve_caller_phone(phone, self._session.caller_phone)
-        return resolved or normalize_phone(phone)
+        country = self.business.country
+        resolved = resolve_caller_phone(phone, self._session.caller_phone, country)
+        return resolved or normalize_phone(phone, country)
 
     def _caller_user_messages(self) -> list[str]:
         from app.models import CallLog
@@ -355,11 +357,11 @@ class ReceptionistToolsImpl:
 
         raw_phone = (phone or "").strip()
         phone = self._resolve_phone(phone)
-        if not is_plausible_phone(phone):
+        if not is_plausible_phone(phone, self.business.country):
             has_caller_id = bool(
                 self._session.caller_phone
                 and self._session.caller_phone not in ("text-chat", "unknown", "")
-                and is_plausible_phone(normalize_phone(self._session.caller_phone))
+                and is_plausible_phone(self._session.caller_phone, self.business.country)
             )
             customer_gave_phone = bool(
                 raw_phone and raw_phone not in ("text-chat", "unknown", "")
@@ -446,8 +448,6 @@ class ReceptionistToolsImpl:
             return ToolResult(success=False, data={}, message=str(exc))
 
     async def send_sms(self, phone: str, message: str) -> ToolResult:
-        from app.config import get_settings
-
         if self._session.sms_sent_this_call:
             return ToolResult(
                 success=False,
@@ -458,8 +458,7 @@ class ReceptionistToolsImpl:
                 ),
             )
 
-        settings = get_settings()
-        if self.call_log_id and not settings.telnyx_messaging_profile_id:
+        if self.call_log_id and not self.notifications.is_sms_functional():
             return ToolResult(
                 success=True,
                 data={"sent": False, "skipped": True, "reason": "SMS not configured for voice calls"},
@@ -467,7 +466,7 @@ class ReceptionistToolsImpl:
             )
 
         phone = self._resolve_phone(phone)
-        if not is_plausible_phone(phone):
+        if not is_plausible_phone(phone, self.business.country):
             return ToolResult(
                 success=False,
                 data={},
@@ -483,17 +482,42 @@ class ReceptionistToolsImpl:
             message="SMS sent" if result["sent"] else "Failed to send SMS",
         )
 
+    def _block_duplicate_recovery_link(self) -> ToolResult | None:
+        if self._session.recovery_link_sent_this_call:
+            if self.notifications.is_sms_functional():
+                reminder = (
+                    "A recovery link was already sent this session. Remind the caller to check "
+                    "their text message and tap the link — do not send another link."
+                )
+            else:
+                reminder = (
+                    "A recovery link was already sent this session. Remind the caller to open the "
+                    "web chat link in their phone browser and type their details there — do not "
+                    "send another link."
+                )
+            return ToolResult(success=False, data={}, message=reminder)
+        return None
+
+    def _resolve_recovery_email(self, email: str | None) -> str | None:
+        if email and is_plausible_email(email.strip()):
+            return email.strip()
+        if self._session.verified_customer_id:
+            customer = CustomerService.get_customer(
+                self.db, self.business_id, self._session.verified_customer_id
+            )
+            if customer and customer.email and is_plausible_email(customer.email):
+                return customer.email.strip()
+        return None
+
     async def send_address_confirmation_link(
         self,
         customer_name: str | None = None,
+        email: str | None = None,
     ) -> ToolResult:
-        """Text the caller a link to confirm service address (voice recovery)."""
-        if not self.voice_mode:
-            return ToolResult(
-                success=False,
-                data={},
-                message="Address confirmation links are only used during phone calls.",
-            )
+        """Send a link to confirm service address via SMS and/or email."""
+        duplicate = self._block_duplicate_recovery_link()
+        if duplicate:
+            return duplicate
         if not self.call_log_id:
             return ToolResult(success=False, data={}, message="No active call session.")
 
@@ -508,6 +532,7 @@ class ReceptionistToolsImpl:
         if call is None:
             return ToolResult(success=False, data={}, message="Call session not found.")
 
+        resolved_email = self._resolve_recovery_email(email)
         name = (customer_name or "").strip() or None
         result = AddressConfirmationService.create_and_send_link(
             self.db,
@@ -515,8 +540,9 @@ class ReceptionistToolsImpl:
             call,
             customer_name=name,
             customer_id=self._session.verified_customer_id,
+            email=resolved_email,
         )
-        if not result.get("link_created"):
+        if not result.get("link_created") and not result.get("url"):
             return ToolResult(
                 success=False,
                 data=result,
@@ -525,37 +551,50 @@ class ReceptionistToolsImpl:
                     "full address slowly, including city, state, and ZIP."
                 ),
             )
+        if result.get("error") and not result.get("sent"):
+            return ToolResult(
+                success=False,
+                data=result,
+                message=(
+                    "Address SMS/email link could not be sent. Prefer send_web_chat_link instead — "
+                    "give the caller the web chat URL so they can type their address online."
+                ),
+            )
         if result.get("sent"):
+            self._session.recovery_link_sent_this_call = True
+            channels: list[str] = []
+            if result.get("sms_sent"):
+                channels.append("text message")
+            if result.get("email_sent"):
+                channels.append("email")
+            channel_label = " and ".join(channels) if channels else "message"
             message = (
-                "Address confirmation link sent by SMS. Tell the caller you texted them a link "
-                "to confirm their service address. They can stay on the line or complete it on "
-                "their phone. Continue the call once the address is confirmed."
+                f"Address-only link sent by {channel_label}. "
+                "Tell the caller to open the link and confirm their address."
             )
         else:
             message = (
-                "Address confirmation link was created but the text message could not be delivered. "
+                "Address confirmation link was created but could not be delivered. "
                 "Ask the caller to spell their full US address slowly — house number, street, city, "
-                "state, and ZIP — or try again later."
+                "state, and ZIP — or confirm their email address and try again."
             )
         return ToolResult(
-            success=True,
+            success=bool(result.get("sent")),
             data=result,
             message=message,
         )
 
-    async def send_web_chat_link(self) -> ToolResult:
-        """Give the caller a web link to continue this conversation online (voice handoff)."""
-        if not self.voice_mode:
-            return ToolResult(
-                success=False,
-                data={},
-                message="Web chat links are created during phone calls only.",
-            )
+    async def send_web_chat_link(self, email: str | None = None) -> ToolResult:
+        """Give the caller a web link to continue online; optionally email it."""
+        duplicate = self._block_duplicate_recovery_link()
+        if duplicate:
+            return duplicate
         if not self.call_log_id:
             return ToolResult(success=False, data={}, message="No active call session.")
 
         from app.models import CallLog
         from app.services.business_slug_service import BusinessSlugService
+        from app.services.recovery_delivery_service import RecoveryDeliveryService
         from app.services.web_continuation_service import WebContinuationService
 
         call = (
@@ -573,15 +612,27 @@ class ReceptionistToolsImpl:
         continue_url = result["continue_url"]
         standalone = result.get("standalone_chat_url") or continue_url
 
+        resolved_email = self._resolve_recovery_email(email)
+        self._session.recovery_link_sent_this_call = True
+
+        delivery = RecoveryDeliveryService.deliver_web_chat_link(
+            self.notifications,
+            self.business,
+            call,
+            continue_url=continue_url,
+            standalone_url=standalone,
+            email=resolved_email,
+        )
+        agent_message = RecoveryDeliveryService.agent_message_for_web_chat(
+            continue_url=continue_url,
+            standalone_url=standalone,
+            delivery=delivery,
+        )
+
         return ToolResult(
             success=True,
-            data=result,
-            message=(
-                "Web chat link created. Tell the caller they can continue on your website — "
-                f"for this call use: {continue_url} — or anytime at: {standalone}. "
-                "They can type their address and finish booking online. "
-                "Keep it brief; do not spell the full URL unless they ask."
-            ),
+            data={**result, **delivery},
+            message=agent_message,
         )
 
     def _caller_phone_for_escalation(self) -> str | None:
@@ -639,14 +690,12 @@ class ReceptionistToolsImpl:
                 self.db.commit()
 
                 if call.external_call_id:
-                    from app.config import get_settings
-                    from app.voice.telnyx_provider import TelnyxVoiceProvider
+                    from app.integrations.registry import get_voice_call_control
 
-                    settings = get_settings()
+                    voice = get_voice_call_control(self.business)
                     escalation = self.business.escalation_phone or self.business.phone_number
-                    if escalation and settings.telnyx_api_key:
-                        provider = TelnyxVoiceProvider()
-                        await provider.transfer_call(call.external_call_id, escalation)
+                    if escalation and voice.is_configured():
+                        await voice.transfer_call(call.external_call_id, escalation)
                         live_transfer = True
                 else:
                     self.owner_notified = self.notifications.notify_owner_escalation(
@@ -780,9 +829,10 @@ class ReceptionistToolsImpl:
         if tool_name == "send_address_confirmation_link":
             return await self.send_address_confirmation_link(
                 customer_name=arguments.get("customer_name"),
+                email=arguments.get("email"),
             )
         if tool_name == "send_web_chat_link":
-            return await self.send_web_chat_link()
+            return await self.send_web_chat_link(email=arguments.get("email"))
         if tool_name == "transfer_call":
             return await self.transfer_call(
                 call_id=arguments.get("call_id", self.call_log_id or "text-session"),

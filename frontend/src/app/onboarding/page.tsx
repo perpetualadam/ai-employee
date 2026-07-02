@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+import { PhoneProvisioningPanel } from "@/components/phone-provisioning-panel";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -40,7 +41,7 @@ function OnboardingWizard() {
   const searchParams = useSearchParams();
   const step = Math.min(4, Math.max(0, Number(searchParams.get("step") ?? 0)));
 
-  const [, setBusiness] = useState<Business | null>(null);
+  const [business, setBusiness] = useState<Business | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -129,12 +130,26 @@ function OnboardingWizard() {
   }
 
   async function handleStep3Next() {
-    await saveBusiness({
-      phone_number: form.phone_number,
-      escalation_phone: form.escalation_phone,
-      ai_instructions: form.ai_instructions,
-    });
-    goToStep(4);
+    setSaving(true);
+    setError("");
+    try {
+      const current = await api.getBusiness();
+      if (!current.phone_number) {
+        setError("Get or save a business phone number before continuing.");
+        return;
+      }
+      await saveBusiness({
+        escalation_phone: form.escalation_phone,
+        ai_instructions: form.ai_instructions,
+      });
+      goToStep(4);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message);
+      }
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleComplete() {
@@ -278,18 +293,11 @@ function OnboardingWizard() {
 
             {step === 3 && (
               <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Telnyx phone number (E.164)</Label>
-                  <Input
-                    id="phone"
-                    value={form.phone_number}
-                    onChange={(e) => setForm({ ...form, phone_number: e.target.value })}
-                    placeholder="+15551234567"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    The number customers call. Must match your Telnyx number.
-                  </p>
-                </div>
+                <PhoneProvisioningPanel
+                  business={business}
+                  onPhoneUpdated={(updated) => setBusiness(updated)}
+                  compact
+                />
                 <div className="space-y-2">
                   <Label htmlFor="escalation">Your cell phone (escalation)</Label>
                   <Input
@@ -322,15 +330,14 @@ function OnboardingWizard() {
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">
                   Your AI receptionist is configured. Test it with a practice conversation, then
-                  point your Telnyx number to the TeXML webhook URL in Settings.
+                  call your business number to hear it live.
                 </p>
                 <div className="rounded-lg border bg-muted/50 p-4 text-sm space-y-2">
                   <p className="font-medium">First-call checklist</p>
                   <ul className="space-y-1 text-muted-foreground">
                     <li>1. Test the AI in the receptionist simulator</li>
-                    <li>2. Configure Telnyx TeXML application (Settings page)</li>
-                    <li>3. Call your number and book a test appointment</li>
-                    <li>4. Check the appointment appears in Calendar</li>
+                    <li>2. Call your business number and book a test appointment</li>
+                    <li>3. Check the appointment appears in Calendar</li>
                   </ul>
                 </div>
                 <div className="flex flex-wrap gap-3">

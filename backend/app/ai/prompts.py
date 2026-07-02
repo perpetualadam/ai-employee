@@ -1,7 +1,7 @@
 """System prompts for the AI receptionist."""
 
 from app.ai.date_utils import format_date_context
-from app.domain.intake import US_ADDRESS_FORMAT_HINT
+from app.domain.telecom import build_recovery_link_prompt_rules, get_address_format_hint
 from app.models import Business, BusinessEmergencyRule, BusinessService
 
 
@@ -12,6 +12,7 @@ def build_receptionist_prompt(
     *,
     caller_phone: str | None = None,
     voice_mode: bool = False,
+    sms_functional: bool = False,
 ) -> str:
     service_lines = (
         "\n".join(
@@ -37,6 +38,11 @@ def build_receptionist_prompt(
 
     hours_summary = _format_working_hours(business.working_hours)
     date_context = format_date_context(business.timezone)
+    address_hint = get_address_format_hint(business.country)
+    recovery_rules = build_recovery_link_prompt_rules(
+        sms_functional=sms_functional,
+        voice_mode=voice_mode,
+    )
 
     custom = ""
     if business.ai_instructions:
@@ -46,9 +52,7 @@ def build_receptionist_prompt(
     has_caller_id = caller_phone and caller_phone not in ("text-chat", "unknown", "")
 
     address_collect_step = (
-        "4. Collect the full US service address where work is needed. Required: "
-        "house/building number, street name, street type (Street, Avenue, Way, Blvd, etc.), "
-        "optional Apt/Suite/Unit, city, state, and 5-digit ZIP code. "
+        f"4. Collect the full service address where work is needed. Required format: {address_hint} "
         "Ask for any missing part one question at a time."
     )
 
@@ -157,13 +161,16 @@ def build_receptionist_prompt(
 - When offering slots, use ONLY the spoken_time values from check_availability — never invent or round times.
 - When confirming a booking, repeat the exact spoken_time of the slot that was booked.
 - NEVER call send_sms on phone calls — confirmation is spoken only.
-- If you cannot capture a complete US address or the caller prefers typing, call send_web_chat_link and tell them to continue on your website (no SMS required).
-- If send_web_chat_link is not enough for address only, you may call send_address_confirmation_link as a fallback when SMS is configured.
+{recovery_rules}
 - Match service_type to what the caller described (e.g. kitchen leak → plumbing repair, not drain cleaning unless they said drain).
 - When quoting appointment times, always say the time in the business timezone ({tz}) with the timezone name.
 - Keep each response to 1–2 short sentences. One question per turn.
 - If the caller says goodbye, thank you, or no further questions — say goodbye and stop. No more tools."""
-        voice_rules = voice_rules.format(tz=business.timezone, us_address=US_ADDRESS_FORMAT_HINT)
+        voice_rules = voice_rules.format(
+            tz=business.timezone,
+            us_address=address_hint,
+            recovery_rules=recovery_rules,
+        )
     else:
         voice_rules = """
 ## Text conversation rules
@@ -177,8 +184,9 @@ def build_receptionist_prompt(
 - NEVER call book_appointment in the same turn you first offered time slots.
 - NEVER call book_appointment or send_sms more than once per conversation.
 - After the customer says no / bye, give a short goodbye only — do not re-confirm the appointment or send another SMS.
-- After transfer_call, end warmly: the team will call them back. Do not invite further booking steps."""
-        voice_rules = voice_rules.format(us_address=US_ADDRESS_FORMAT_HINT)
+- After transfer_call, end warmly: the team will call them back. Do not invite further booking steps.
+{recovery_rules}"""
+        voice_rules = voice_rules.format(us_address=address_hint, recovery_rules=recovery_rules)
 
     return f"""You are the AI receptionist for {business.name}, a {business.industry.value} business.
 
@@ -190,7 +198,7 @@ Your job is to act like a professional, friendly receptionist — not a generic 
 {workflow}
 {caller_context}
 ## Hard rules — never break these
-- {US_ADDRESS_FORMAT_HINT}
+- {address_hint}
 - Intake order is always: name → address → phone (skip asking for phone when caller ID is provided) → confirm read-back → create_customer.
 - NEVER call lookup_customer before you have collected the customer's full service address.
 - NEVER call check_availability or book_appointment until create_customer has succeeded with the caller's real name and address.
@@ -216,7 +224,7 @@ Your job is to act like a professional, friendly receptionist — not a generic 
 {emergency_lines}
 
 ## Tool usage rules
-- Collect the full US address (number, street name, street type, optional unit, city, state, ZIP), then read it back with the phone number for confirmation before create_customer.
+- Collect the full service address ({address_hint}), then read it back with the phone number for confirmation before create_customer.
 - Collect name, then address, then phone (unless caller ID is already known) before lookup or create.
 - Always lookup or create a customer BEFORE booking.
 - Pass datetimes to book_appointment in ISO 8601 UTC format using start_time_utc and end_time_utc from check_availability.

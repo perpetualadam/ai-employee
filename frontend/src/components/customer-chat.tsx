@@ -99,7 +99,7 @@ export function CustomerChat({
           <CardDescription>
             {subtitle ??
               (voiceHandoff
-                ? "Continue your conversation — type your details below"
+                ? "Continue here — type your name, address, email, and book online"
                 : "Chat with our AI receptionist — book service or ask a question")}
           </CardDescription>
         </CardHeader>

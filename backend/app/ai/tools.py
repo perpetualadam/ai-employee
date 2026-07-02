@@ -163,11 +163,24 @@ RECEPTIONIST_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "function": {
             "name": "send_web_chat_link",
             "description": (
-                "Create a web chat link so the caller can continue online — finish typing their "
-                "address, book an appointment, or complete intake when voice is difficult. "
-                "Prefer this over SMS when speech recognition fails. Voice calls only."
+                "PRIMARY recovery when voice fails or details are misheard. Creates the customer "
+                "web chat link. When SMS is configured, texts the link to the caller's phone "
+                "first — tell them to check their text message. If SMS is unavailable, read the "
+                "link on the call so they can open it in their browser. Optional email if they "
+                "already gave a valid email. Do not call again if a recovery link was already sent."
             ),
-            "parameters": {"type": "object", "properties": {}},
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "description": (
+                            "Optional — only if the caller already stated a clear email; "
+                            "never require email before giving them the web chat link"
+                        ),
+                    },
+                },
+            },
         },
     },
     {
@@ -175,8 +188,9 @@ RECEPTIONIST_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "function": {
             "name": "send_address_confirmation_link",
             "description": (
-                "Send the caller an SMS link to confirm their service address when speech "
-                "recognition keeps failing or the address is unclear. Voice calls only."
+                "Send an address-only confirmation link via SMS and/or email when the caller's "
+                "address keeps failing validation. Prefer send_web_chat_link for full intake. "
+                "Do not call again if a recovery link was already sent this session."
             ),
             "parameters": {
                 "type": "object",
@@ -184,6 +198,10 @@ RECEPTIONIST_TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "customer_name": {
                         "type": "string",
                         "description": "Caller name if already collected",
+                    },
+                    "email": {
+                        "type": "string",
+                        "description": "Optional email if already collected — prefer send_web_chat_link instead",
                     },
                 },
             },

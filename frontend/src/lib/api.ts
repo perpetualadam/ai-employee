@@ -66,6 +66,26 @@ export const api = {
   getBusiness: () => request<Business>("/business"),
   updateBusiness: (data: Partial<Business>) =>
     request<Business>("/business", { method: "PATCH", body: JSON.stringify(data) }),
+  getPhoneProvisioningStatus: () =>
+    request<PhoneProvisioningStatus>("/business/phone/status"),
+  searchAvailablePhoneNumbers: (areaCode?: string) => {
+    const qs = new URLSearchParams();
+    if (areaCode) qs.set("area_code", areaCode);
+    const query = qs.toString();
+    return request<PhoneSearchResult>(
+      `/business/phone/available${query ? `?${query}` : ""}`,
+    );
+  },
+  provisionPhoneNumber: (phone_number: string) =>
+    request<PhoneProvisionResult>("/business/phone/provision", {
+      method: "POST",
+      body: JSON.stringify({ phone_number }),
+    }),
+  placeOutboundCall: (data: { customer_id?: string; phone?: string; reason?: string }) =>
+    request<OutboundCallResult>("/calls/outbound", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
   getDashboard: () => request<DashboardSummary>("/dashboard"),
   listConversations: (params?: { limit?: number; offset?: number }) => {
     const qs = new URLSearchParams();
@@ -212,11 +232,47 @@ export interface Business {
   working_hours: Record<string, unknown>;
   ai_instructions: string | null;
   phone_number: string | null;
+  phone_provisioned?: boolean;
+  reminders_enabled?: boolean;
   escalation_phone: string | null;
   public_slug: string | null;
   onboarding_completed: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface PhoneProvisioningStatus {
+  phone_number: string | null;
+  provisioned: boolean;
+  platform_configured: boolean;
+  can_search: boolean;
+  manual_fallback_allowed: boolean;
+  country: string;
+}
+
+export interface AvailablePhoneNumber {
+  phone_number: string;
+  region?: string | null;
+  cost?: string | null;
+}
+
+export interface PhoneSearchResult {
+  numbers: AvailablePhoneNumber[];
+  country: string;
+}
+
+export interface PhoneProvisionResult {
+  phone_number: string;
+  provisioned: boolean;
+  telnyx_phone_number_id?: string | null;
+  message: string;
+}
+
+export interface OutboundCallResult {
+  call_log_id: string;
+  status: string;
+  external_call_id?: string | null;
+  message: string;
 }
 
 export interface CustomerInput {
@@ -358,6 +414,7 @@ export interface ConversationDetail {
   ai_summary: string | null;
   escalated: boolean;
   created_at: string;
+  transcript: string | null;
   messages: ConversationMessage[];
   activities: ConversationActivity[];
   lead_card: ConversationLeadCard;

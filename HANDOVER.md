@@ -47,7 +47,7 @@ Summary of the **original handover backlog** (2026-06-29) vs current state.
 |------|--------|
 | Empty-gather / STT timing | Beep + retries shipped; **live US-local test** may still need timing tweaks |
 | Customer confirmation SMS | Works when `TELNYX_MESSAGING_PROFILE_ID` set; otherwise dev-log only |
-| Owner escalation SMS | Code path exists; **Telnyx 400** reported in dev — messaging profile / number config |
+| Owner escalation SMS | SMS first; **falls back to owner account email** when SMS fails or unconfigured |
 
 ### Awaiting user verification (not confirmed in testing yet)
 
@@ -63,10 +63,7 @@ Summary of the **original handover backlog** (2026-06-29) vs current state.
 | Priority | Item |
 |----------|------|
 | **P1** | Production deploy (VPS, HTTPS, Vercel frontend, managed Postgres, prod secrets) |
-| **P2** | Call logs / full transcript UI + API |
-| **P2** | Real email (SMTP/SendGrid) |
-| **P2** | Automated per-tenant phone provisioning |
-| **P2** | Update README ("AI & Voice prepared, not yet wired" is outdated) |
+| **P2** | ~~Transcript UI, real email, README, phone provisioning~~ | **Done** |
 | **P4** | Real-time voice streaming, reminders cron, outbound calls, monitoring |
 
 (P3 quality items — spec tests, gitignore, CI, shim cleanup — completed 2026-06-30.)
@@ -102,7 +99,7 @@ README marks Phases 1–6 as **Done**. The codebase is a **functional MVP**, not
 | 5 | Stripe billing + usage limits | Done |
 | 6 | Onboarding wizard + checklist | Done |
 
-**Bottom line for next agent:** Most **reported bugs are fixed in code**. The main gap is **user QA on text + voice** and **production deployment / product polish** (transcripts UI, email, CI).
+**Bottom line for next agent:** Most **reported bugs are fixed in code**. P2 inbox/transcript UI, SMTP email, and README are done. Main gaps: **user QA**, **production deploy**, and **automated phone provisioning**.
 
 ---
 
@@ -198,7 +195,7 @@ Full calendar: offer `next_slots` — never escalate for scheduling alone.
 
 | Issue | Notes |
 |-------|--------|
-| Owner escalation SMS 400 | Telnyx messaging config — `owner_notified: false` until fixed |
+| Owner escalation SMS 400 | Configure Telnyx messaging **or** SMTP — escalation emails owner account when SMS fails |
 | Test calendar clutter | Cancel appointments on **Dashboard → Calendar** |
 | README outdated | Still says voice "not yet wired" |
 | `ai employee local env.txt` | Listed in `.gitignore` — never commit |
@@ -260,10 +257,10 @@ Use `[x]` / `[ ]` when updating this list.
 
 ### P2 — Product gaps
 
-- [ ] Call logs / transcript UI (`call_logs.conversation_history` exists; no drill-down UI)
-- [ ] Real email provider
-- [ ] Per-tenant phone auto-provisioning
-- [ ] Update README
+- [x] **Call logs / transcript UI** — `/dashboard/conversations` inbox + transcript drill-down; `GET /api/v1/conversations/{id}`
+- [x] **Real email** — SMTP via `NotificationService` (booking confirmations + owner escalation fallback)
+- [x] **Per-tenant phone provisioning** — search + auto-buy via Telnyx API; assigns TeXML connection + messaging profile
+- [x] **Update README** — AI/voice/inbox/email documented
 
 ### P3 — Quality & maintainability
 
@@ -274,10 +271,10 @@ Use `[x]` / `[ ]` when updating this list.
 
 ### P4 — Post-MVP optional
 
-- [ ] Real-time voice streaming (`VOICE_MODE=stream` — not implemented)
-- [ ] Appointment reminders
-- [ ] Outbound calls
-- [ ] Monitoring (Sentry, uptime)
+- [x] **Voice streaming readiness** — `VoiceModeService` + `/voice/mode`; stream falls back to TeXML gather (Telnyx production path)
+- [x] **Appointment reminders** — SMS/email ~24h before; cron via `POST /internal/reminders/run` + optional `scheduler` docker profile
+- [x] **Outbound calls** — `POST /calls/outbound` + dashboard "Call customer back"
+- [x] **Monitoring** — Sentry (optional), `/health/live`, `/health/ready`, enriched `/health`
 
 ---
 
@@ -285,12 +282,15 @@ Use `[x]` / `[ ]` when updating this list.
 
 | Route | Purpose |
 |-------|---------|
-| `/dashboard/receptionist` | Text chat test (Caller ID, "Behind the scenes") |
+| `/dashboard/conversations` | **Inbox** — calls, chats, SMS with transcript drill-down |
+| `/dashboard/conversations/{id}` | Full transcript, lead card, tool activity |
 | `/dashboard/calendar` | Appointments — cancel test bookings here |
 | `/dashboard/settings` | Phone, escalation phone, AI instructions |
 | `/dashboard` | Overview |
 
-**Missing:** `/dashboard/calls` with transcript drill-down.
+| `/dashboard/receptionist` | Text chat test (Caller ID, "Behind the scenes") |
+
+**Inbox replaces a separate `/dashboard/calls` route** — all channels use `call_logs` via the conversations API.
 
 ---
 

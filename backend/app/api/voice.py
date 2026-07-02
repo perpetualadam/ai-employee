@@ -9,13 +9,15 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import SessionLocal, get_db
+from app.models.enums import CallStatus
 from app.services.conversation_summary_service import ConversationSummaryService
 from app.voice.call_service import handle_call_status, handle_inbound_call
 from app.voice.gather_handler import handle_gather_result
+from app.services.voice_mode_service import VoiceModeService
 from app.voice.media_stream_handler import handle_media_stream
 from app.voice.stt.gather_stt import GatherSpeechSTT
-from app.voice.texml_builder import build_empty_response, build_hangup
-from app.voice.webhook_auth import validate_telnyx_webhook
+from app.voice.texml_builder import build_empty_response, build_hangup, build_outbound_answer_texml
+from app.integrations.registry import get_voice_webhook_adapter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/voice", tags=["voice"])
@@ -47,7 +49,7 @@ async def inbound_call(
     db: Session = Depends(get_db),
 ) -> Response:
     """Telnyx TeXML webhook when a call comes in. Set as TeXML Application voice URL."""
-    params = await validate_telnyx_webhook(request)
+    params = await get_voice_webhook_adapter().parse_request(request)
 
     call_sid = params.get("CallSid", "")
     from_number = params.get("From", "")
@@ -56,10 +58,11 @@ async def inbound_call(
     logger.info("Inbound call", extra={"call_sid": call_sid, "from": from_number, "to": to_number})
 
     settings = get_settings()
-    if settings.voice_mode == "stream":
-        logger.warning(
-            "VOICE_MODE=stream is not supported with Telnyx; using gather mode. "
-            "Set VOICE_MODE=gather in .env."
+    effective_mode = VoiceModeService.effective_mode()
+    if settings.voice_mode == "stream" and effective_mode == "gather":
+        logger.info(
+            "VOICE_MODE=stream requested; using TeXML gather (Telnyx production path)",
+            extra={"requested": settings.voice_mode, "effective": effective_mode},
         )
 
     # Telnyx may POST speech to inbound if the gather action URL failed (e.g. 500).
@@ -96,7 +99,7 @@ async def gather_speech(
     db: Session = Depends(get_db),
 ) -> Response:
     """Telnyx webhook after speech is recognized via <Gather input='speech'>."""
-    params = await validate_telnyx_webhook(request)
+    params = await get_voice_webhook_adapter().parse_request(request)
 
     speech_result, confidence = GatherSpeechSTT.extract_from_params(params)
 
@@ -123,7 +126,7 @@ async def call_status(
     db: Session = Depends(get_db),
 ) -> Response:
     """Telnyx call status callback — marks call complete and records duration."""
-    params = await validate_telnyx_webhook(request)
+    params = await get_voice_webhook_adapter().parse_request(request)
 
     if call_log_id:
         status_value = params.get("CallStatus", "")
@@ -137,6 +140,45 @@ async def call_status(
             background_tasks.add_task(_summarize_conversation, call_log_id)
 
     return _texml_response(build_empty_response())
+
+
+@router.get("/mode")
+def voice_mode_status() -> dict:
+    return VoiceModeService.status()
+
+
+@router.api_route("/outbound/answer", methods=["GET", "POST"])
+async def outbound_answer(
+    request: Request,
+    call_log_id: str = Query(...),
+    db: Session = Depends(get_db),
+) -> Response:
+    """TeXML for when a customer answers an outbound callback."""
+    await get_voice_webhook_adapter().parse_request(request)
+
+    from app.models import Business, CallLog
+
+    call = (
+        db.query(CallLog)
+        .filter(CallLog.id == call_log_id)
+        .first()
+    )
+    if call is None:
+        return _texml_response(build_hangup("Sorry, this call could not be completed."))
+
+    business = db.query(Business).filter(Business.id == call.business_id).first()
+    if business is None:
+        return _texml_response(build_hangup("Sorry, this call could not be completed."))
+
+    escalation = business.escalation_phone or business.phone_number
+    texml = build_outbound_answer_texml(
+        business.name,
+        escalation,
+        reason=call.summary,
+    )
+    call.status = CallStatus.IN_PROGRESS
+    db.commit()
+    return _texml_response(texml)
 
 
 @router.websocket("/stream")

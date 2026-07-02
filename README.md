@@ -1,6 +1,6 @@
 # AI Employee
 
-AI receptionist SaaS for trade businesses. Answers calls, qualifies leads, books jobs, sends confirmations, and updates a simple CRM.
+AI receptionist SaaS for trade businesses. Answers calls and chats, qualifies leads, books jobs, sends confirmations, and updates a simple CRM.
 
 ## Architecture
 
@@ -14,14 +14,14 @@ AI receptionist SaaS for trade businesses. Answers calls, qualifies leads, books
                     │                          │                          │
               ┌─────▼─────┐            ┌───────▼───────┐          ┌───────▼───────┐
               │ PostgreSQL │            │  Groq API     │          │ Telnyx        │
-              │ (multi-    │            │  (Phase 3)    │          │ (Phase 4)     │
+              │ (multi-    │            │  (LLM)        │          │ Voice + SMS   │
               │  tenant)   │            └───────────────┘          └───────────────┘
               └───────────┘
 ```
 
 ### Multi-tenancy
 
-Every tenant-scoped table includes `business_id`. API routes resolve the authenticated user's business and filter all queries by that ID. Designed to scale to thousands of businesses on a single PostgreSQL instance with proper indexing.
+Every tenant-scoped table includes `business_id`. API routes resolve the authenticated user's business and filter all queries by that ID.
 
 ### Database schema
 
@@ -34,14 +34,19 @@ Every tenant-scoped table includes `business_id`. API routes resolve the authent
 | `customers` | CRM contacts (unique phone per business) |
 | `jobs` | Work orders linked to customers |
 | `appointments` | Internal calendar |
-| `call_logs` | Phone call history |
+| `call_logs` | Calls, chats, SMS — includes `conversation_history` JSON |
 | `ai_activity_logs` | AI tool call audit trail |
 
-### AI & Voice (prepared, not yet wired)
+### AI, voice, and inbox (wired)
 
-- `backend/app/ai/provider.py` — swappable AI provider interface (Groq first)
-- `backend/app/ai/tools.py` — receptionist tool definitions
-- `backend/app/voice/provider.py` — swappable voice provider (Telnyx TeXML)
+| Layer | Key modules |
+|-------|-------------|
+| AI receptionist | `backend/app/ai/receptionist_agent.py`, `receptionist_tools.py`, `prompts.py` |
+| Voice (Telnyx TeXML) | `backend/app/voice/call_service.py`, `gather_handler.py`, `api/voice.py` |
+| Unified inbox | `backend/app/services/conversation_service.py`, `api/conversations.py` |
+| Notifications | `backend/app/services/notification_service.py` — Telnyx SMS + SMTP email |
+
+Dashboard **Inbox** (`/dashboard/conversations`) shows every conversation with full transcript drill-down.
 
 ## Quick start
 
@@ -54,7 +59,7 @@ Every tenant-scoped table includes `business_id`. API routes resolve the authent
 
 ```bash
 cp .env.example .env
-# Edit SECRET_KEY and other values as needed
+# Edit SECRET_KEY, GROQ_API_KEY, Telnyx keys as needed
 ```
 
 ### 2. Backend + Database
@@ -63,19 +68,82 @@ cp .env.example .env
 docker compose up -d
 ```
 
-API runs at `http://localhost:8000`. Docs at `http://localhost:8000/docs` (debug mode).
+API: http://localhost:8000 — Docs: http://localhost:8000/docs
 
 Migrations run automatically on container start.
+
+After backend code changes:
+
+```bash
+docker compose up -d --force-recreate api
+```
 
 ### 3. Frontend
 
 ```bash
 cd frontend
-cp ../.env.example .env.local   # or set NEXT_PUBLIC_API_URL
+cp ../.env.example .env.local   # optional; defaults to localhost:8000
+npm install
 npm run dev
 ```
 
-App runs at `http://localhost:3000`.
+App: http://localhost:3000
+
+### 4. Run tests (same as CI)
+
+```bash
+docker compose exec api python -m unittest discover -s tests -v
+```
+
+## Groq AI setup
+
+1. Create an API key at [Groq Console](https://console.groq.com/).
+2. Add to `.env`:
+   ```bash
+   GROQ_API_KEY=gsk_...
+   GROQ_MODEL=llama-3.3-70b-versatile
+   ```
+
+## Telnyx voice setup
+
+1. Create an account at [Telnyx Mission Control](https://portal.telnyx.com/).
+2. **API Keys** → create a key → `TELNYX_API_KEY`.
+3. Copy **Account SID** → `TELNYX_ACCOUNT_SID`.
+4. **Keys & Credentials → Public Key** → `TELNYX_PUBLIC_KEY` (webhook verification).
+5. **Numbers** → buy a number → assign to a **TeXML Application**:
+   - Voice URL: `https://your-api/api/v1/voice/inbound`
+6. Optional SMS: create a **Messaging Profile** → `TELNYX_MESSAGING_PROFILE_ID`.
+7. Add to `.env`:
+   ```bash
+   TELNYX_API_KEY=KEY...
+   TELNYX_PUBLIC_KEY=...
+   TELNYX_ACCOUNT_SID=...
+   TELNYX_PHONE_NUMBER=+1...
+   TELNYX_MESSAGING_PROFILE_ID=...   # optional
+   PUBLIC_API_URL=https://your-ngrok-or-api-url
+   VOICE_MODE=gather
+   ```
+8. In app **Settings**, set the same phone number and an escalation phone.
+
+For local dev: `ngrok http 8000` and set `PUBLIC_API_URL` to the ngrok HTTPS URL.
+
+## Email setup (booking confirmations + escalation alerts)
+
+When SMTP is not configured, emails are **logged only** (dev mode). With SMTP configured, the app sends:
+
+- **Booking confirmation** to the customer (when they have an email on file)
+- **Escalation alert** to the business owner account email (fallback when owner SMS fails)
+
+Add to `.env` (works with SendGrid, Mailgun, Amazon SES SMTP relay, etc.):
+
+```bash
+SMTP_HOST=smtp.sendgrid.net
+SMTP_PORT=587
+SMTP_USER=apikey
+SMTP_PASSWORD=SG...
+SMTP_FROM_EMAIL=noreply@yourdomain.com
+SMTP_USE_TLS=true
+```
 
 ## Stripe billing setup
 
@@ -88,76 +156,60 @@ App runs at `http://localhost:3000`.
    STRIPE_PRICE_PRO=price_...
    FRONTEND_URL=http://localhost:3000
    ```
-3. Add webhook endpoint: `https://your-api/api/v1/billing/webhook`
+3. Webhook endpoint: `https://your-api/api/v1/billing/webhook`
    - Events: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed`
-4. Enable Stripe Customer Portal in Stripe Dashboard (Settings → Billing → Customer portal).
 
-New accounts get a **14-day free trial** on the Starter plan limits. AI receptionist and voice calls require an active trial or subscription.
-
-## Telnyx voice setup
-
-1. Create an account at [Telnyx Mission Control](https://portal.telnyx.com/).
-2. **API Keys** → create a key → add to `.env` as `TELNYX_API_KEY`.
-3. Copy your **Account SID** (UUID on dashboard) → `TELNYX_ACCOUNT_SID`.
-4. **Keys & Credentials → Public Key** → `TELNYX_PUBLIC_KEY` (for webhook verification).
-5. **Numbers** → buy a number → assign to a **TeXML Application**:
-   - Voice URL: `https://your-api/api/v1/voice/inbound` (GET or POST)
-6. Optional SMS: create a **Messaging Profile**, add `TELNYX_MESSAGING_PROFILE_ID`.
-7. Add to `.env`:
-   ```bash
-   TELNYX_API_KEY=KEY...
-   TELNYX_PUBLIC_KEY=...
-   TELNYX_ACCOUNT_SID=...
-   TELNYX_PHONE_NUMBER=+1...
-   TELNYX_MESSAGING_PROFILE_ID=...   # optional
-   PUBLIC_API_URL=https://your-ngrok-or-api-url
-   VOICE_MODE=gather
-   ```
-8. In the app **Settings**, set the same phone number and an escalation phone.
-
-For local dev, run `ngrok http 8000` and set `PUBLIC_API_URL` to the ngrok HTTPS URL.
+New accounts get a **14-day free trial** on Starter limits.
 
 ## Development phases
 
 | Phase | Status | Scope |
 |-------|--------|-------|
 | 1 | **Done** | Database, auth, dashboard shell |
-| **2** | **Done** | CRM + appointments API & UI |
-| **3** | **Done** | AI text receptionist (Groq + tools) |
-| **4** | **Done** | Voice calling (Telnyx TeXML + speech gather) |
-| **5** | **Done** | Stripe billing + usage limits |
-| **6** | **Done** | Onboarding wizard + checklist + empty states |
+| 2 | **Done** | CRM + appointments API & UI |
+| 3 | **Done** | AI text receptionist (Groq + tools) |
+| 4 | **Done** | Voice calling (Telnyx TeXML + speech gather) |
+| 5 | **Done** | Stripe billing + usage limits |
+| 6 | **Done** | Onboarding wizard + unified inbox |
 
-## API endpoints (Phase 1)
+## API endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/v1/auth/register` | Create account + default business |
 | POST | `/api/v1/auth/login` | Get JWT token |
 | GET | `/api/v1/auth/me` | Current user |
-| GET | `/api/v1/business` | Business profile |
-| PATCH | `/api/v1/business` | Update profile |
+| GET/PATCH | `/api/v1/business` | Business profile |
 | GET | `/api/v1/dashboard` | Dashboard summary |
-| GET/POST | `/api/v1/customers` | List / create customers |
-| GET/PATCH/DELETE | `/api/v1/customers/{id}` | Customer CRUD |
-| GET/POST | `/api/v1/jobs` | List / create jobs |
-| GET/PATCH/DELETE | `/api/v1/jobs/{id}` | Job CRUD |
-| GET/POST | `/api/v1/appointments` | List / book appointments |
-| GET | `/api/v1/appointments/availability` | Available slots for a date |
-| PATCH | `/api/v1/appointments/{id}` | Reschedule / update |
-| POST | `/api/v1/appointments/{id}/cancel` | Cancel appointment |
-| POST | `/api/v1/receptionist/chat` | Chat with AI receptionist |
-| POST/GET | `/api/v1/voice/inbound` | Telnyx TeXML inbound call webhook |
-| POST | `/api/v1/voice/gather` | Telnyx speech gather callback |
-| POST | `/api/v1/voice/status` | Telnyx call status callback |
-| GET | `/api/v1/billing/status` | Subscription status and usage |
-| POST | `/api/v1/billing/checkout` | Start Stripe Checkout |
+| GET | `/api/v1/conversations` | Inbox list (calls, chats, SMS) |
+| GET | `/api/v1/conversations/{id}` | Transcript + lead card + tool activity |
+| GET/POST | `/api/v1/customers` | CRM |
+| GET/POST | `/api/v1/appointments` | Calendar |
+| GET | `/api/v1/appointments/availability` | Available slots |
+| POST | `/api/v1/receptionist/chat` | Dashboard AI receptionist preview |
+| POST/GET | `/api/v1/voice/inbound` | Telnyx inbound call webhook |
+| POST/GET | `/api/v1/voice/gather` | Telnyx speech gather callback |
+| POST | `/api/v1/voice/status` | Call status callback |
+| POST/GET | `/api/v1/sms/inbound` | Telnyx SMS webhook |
+| GET | `/api/v1/billing/status` | Subscription + usage |
+| POST | `/api/v1/billing/checkout` | Stripe Checkout |
 | POST | `/api/v1/billing/portal` | Stripe Customer Portal |
-| POST | `/api/v1/billing/webhook` | Stripe webhook |
-| GET | `/api/v1/onboarding/status` | Setup checklist progress |
-| POST | `/api/v1/onboarding/complete` | Mark onboarding done |
-| POST | `/api/v1/onboarding/seed-defaults` | Add default services & rules |
-| POST | `/api/v1/onboarding/sample-data` | Add demo customer & appointment |
+| GET | `/api/v1/onboarding/status` | Setup checklist |
+
+Public customer web chat: `/chat/{slug}` (see `api/public.py`).
+
+## Dashboard pages
+
+| Route | Purpose |
+|-------|---------|
+| `/dashboard` | Overview, stats, recent conversations |
+| `/dashboard/conversations` | **Inbox** — all customer conversations |
+| `/dashboard/conversations/{id}` | Transcript, lead summary, tool activity |
+| `/dashboard/receptionist` | Test AI receptionist (text chat) |
+| `/dashboard/customers` | CRM |
+| `/dashboard/calendar` | Appointments |
+| `/dashboard/settings` | Phone, hours, escalation, AI instructions |
+| `/dashboard/billing` | Stripe plan + usage |
 
 ## Project structure
 
@@ -165,23 +217,23 @@ For local dev, run `ngrok http 8000` and set `PUBLIC_API_URL` to the ngrok HTTPS
 ├── backend/
 │   ├── app/
 │   │   ├── api/          # Route handlers
-│   │   ├── ai/           # Groq provider, tools, agent
-│   │   ├── core/         # Auth, deps, logging
-│   │   ├── models/       # SQLAlchemy ORM
-│   │   ├── schemas/      # Pydantic DTOs
-│   │   ├── services/     # Business logic
-│   │   └── voice/        # Voice provider (Phase 4)
-│   └── alembic/          # Database migrations
+│   │   ├── ai/           # Groq agent, tools, prompts
+│   │   ├── domain/       # Business rules (no HTTP deps)
+│   │   ├── services/     # CRM, calendar, notifications, inbox
+│   │   ├── voice/        # Telnyx TeXML, STT, gather flow
+│   │   └── models/       # SQLAlchemy ORM
+│   └── tests/            # Spec tests (run in CI)
 ├── frontend/
-│   └── src/
-│       ├── app/          # Next.js pages
-│       ├── components/   # UI components
-│       └── lib/          # API client, auth helpers
+│   └── src/app/dashboard/
+├── .github/workflows/ci.yml
 └── docker-compose.yml
 ```
 
+See `backend/app/ARCHITECTURE.md` and `HANDOVER.md` for agent handover notes.
+
 ## Deployment notes
 
-- **Frontend**: Deploy to Vercel. Set `NEXT_PUBLIC_API_URL` to your API URL.
-- **Backend**: Deploy Docker container to any VPS (Hetzner, DigitalOcean, etc.).
-- **Database**: Managed PostgreSQL or the included Docker volume for MVP.
+- **Frontend**: Vercel — set `NEXT_PUBLIC_API_URL`.
+- **Backend**: Docker on VPS with HTTPS.
+- **Database**: Managed PostgreSQL recommended for production.
+- **CI**: GitHub Actions runs backend tests + frontend lint/build on push to `main`.

@@ -92,3 +92,31 @@ def build_hangup(message: str) -> str:
 
 def build_empty_response() -> str:
     return '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
+
+
+def build_outbound_answer_texml(
+    business_name: str,
+    escalation_phone: str | None,
+    *,
+    reason: str | None = None,
+) -> str:
+    """When customer answers an outbound callback, greet and connect to the owner."""
+    intro = reason or f"Hi, this is {business_name} calling about your recent service request."
+    parts = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        "<Response>",
+        _say(intro),
+    ]
+    if escalation_phone:
+        phone = escape(escalation_phone.strip(), quote=False)
+        parts.append(_say("Connecting you now."))
+        parts.append(f'<Dial timeout="30"><Number>{phone}</Number></Dial>')
+        parts.append(_say("Sorry, we could not connect you. We will try again soon."))
+    else:
+        parts.append(
+            _say("Please call us back at your convenience. Thank you.")
+        )
+    parts.append("<Hangup/>")
+    parts.append("</Response>")
+    return "".join(parts)
+

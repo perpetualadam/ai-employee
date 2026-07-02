@@ -21,6 +21,7 @@ class VoiceSessionState(ConversationState):
     availability_checked_this_turn: bool = False
     prior_availability_check: bool = False
     sms_sent_this_call: bool = False
+    recovery_link_sent_this_call: bool = False
 
     @classmethod
     def load(
@@ -71,6 +72,10 @@ class VoiceSessionState(ConversationState):
                 self.offered_slots = slots
         elif log.tool_name == "send_sms" and output.get("success"):
             self.sms_sent_this_call = True
+        elif log.tool_name in ("send_address_confirmation_link", "send_web_chat_link") and output.get(
+            "success"
+        ):
+            self.recovery_link_sent_this_call = True
 
     def require_intake(self, action: str) -> ToolResult | None:
         if not self.intake_saved_this_call:

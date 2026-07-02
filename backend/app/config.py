@@ -31,11 +31,16 @@ class Settings(BaseSettings):
     # Future integrations (Phase 3+)
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
+    ai_provider: str = "groq"  # groq — add openai/anthropic adapters in integrations/registry
     telnyx_api_key: str = ""
     telnyx_public_key: str = ""
     telnyx_account_sid: str = ""
     telnyx_phone_number: str = ""
     telnyx_messaging_profile_id: str = ""
+    telnyx_texml_connection_id: str = ""
+    sms_provider: str = "telnyx"  # telnyx | dev | auto (country-based pick)
+    voice_provider: str = "telnyx"  # telnyx | auto — swap voice CPaaS via integrations/adapters
+    email_provider: str = "auto"  # auto | smtp | dev
     public_api_url: str = "http://localhost:8000"
     deepgram_api_key: str = ""
     voice_mode: str = "gather"  # gather | stream
@@ -46,6 +51,14 @@ class Settings(BaseSettings):
     stripe_price_starter: str = ""
     stripe_price_pro: str = ""
     frontend_url: str = "http://localhost:3000"
+
+    # P4 — reminders, monitoring, internal jobs
+    reminders_enabled: bool = True
+    reminder_hours_before: int = 24
+    cron_secret: str = ""
+    sentry_dsn: str = ""
+    sentry_environment: str = "development"
+    sentry_traces_sample_rate: float = 0.1
 
     # Email (SMTP) — optional; logs only when unset
     smtp_host: str = ""

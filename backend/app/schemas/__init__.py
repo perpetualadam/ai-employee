@@ -76,6 +76,7 @@ class BusinessUpdate(BaseModel):
     ai_instructions: Optional[str] = None
     phone_number: Optional[str] = None
     escalation_phone: Optional[str] = None
+    reminders_enabled: Optional[bool] = None
 
 
 class BusinessResponse(BaseModel):
@@ -91,11 +92,63 @@ class BusinessResponse(BaseModel):
     working_hours: dict
     ai_instructions: Optional[str]
     phone_number: Optional[str]
+    phone_provisioned: bool = False
     escalation_phone: Optional[str]
+    reminders_enabled: bool = True
     public_slug: Optional[str]
     onboarding_completed: bool
     created_at: datetime
     updated_at: datetime
+
+
+class AvailablePhoneNumber(BaseModel):
+    phone_number: str
+    region: Optional[str] = None
+    cost: Optional[str] = None
+
+
+class PhoneProvisioningStatusResponse(BaseModel):
+    phone_number: Optional[str] = None
+    provisioned: bool = False
+    platform_configured: bool = False
+    can_search: bool = False
+    manual_fallback_allowed: bool = True
+    country: str = "US"
+
+
+class PhoneSearchResponse(BaseModel):
+    numbers: list[AvailablePhoneNumber]
+    country: str
+
+
+class PhoneProvisionRequest(BaseModel):
+    phone_number: str = Field(min_length=8, max_length=32)
+
+
+class PhoneProvisionResponse(BaseModel):
+    phone_number: str
+    provisioned: bool
+    telnyx_phone_number_id: Optional[str] = None
+    message: str
+
+
+class OutboundCallRequest(BaseModel):
+    customer_id: Optional[str] = None
+    phone: Optional[str] = Field(default=None, max_length=32)
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+
+class OutboundCallResponse(BaseModel):
+    call_log_id: str
+    status: str
+    external_call_id: Optional[str] = None
+    message: str
+
+
+class ReminderRunResponse(BaseModel):
+    checked: int
+    sent: int
+    results: list[dict]
 
 
 class BusinessServiceCreate(BaseModel):
@@ -326,6 +379,7 @@ class ConversationDetailResponse(BaseModel):
     ai_summary: Optional[str]
     escalated: bool
     created_at: datetime
+    transcript: Optional[str] = None
     messages: list[ConversationMessage]
     activities: list[AIActivityDetailResponse]
     lead_card: ConversationLeadCard

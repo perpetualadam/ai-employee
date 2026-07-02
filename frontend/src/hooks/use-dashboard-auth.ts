@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { api, Business } from "@/lib/api";
@@ -12,6 +12,13 @@ export function useDashboardAuth() {
   const [business, setBusiness] = useState<Business | null>(null);
   const [token, setTokenState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const refreshBusiness = useCallback(async () => {
+    const biz = await api.getBusiness();
+    setBusiness(biz);
+    setBusinessName(biz.name);
+    return biz;
+  }, []);
 
   useEffect(() => {
     const storedToken = getToken();
@@ -31,5 +38,5 @@ export function useDashboardAuth() {
       .finally(() => setLoading(false));
   }, [router]);
 
-  return { token, business, businessName, loading };
+  return { token, business, businessName, loading, refreshBusiness };
 }

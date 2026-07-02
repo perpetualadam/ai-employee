@@ -71,6 +71,7 @@ class ConversationService:
             ai_summary=call.ai_summary,
             escalated=call.escalated,
             created_at=call.created_at,
+            transcript=call.transcript,
             messages=ConversationService._history_to_messages(call),
             activities=[AIActivityDetailResponse.model_validate(a) for a in activities],
             lead_card=ConversationService._build_lead_card(db, call),

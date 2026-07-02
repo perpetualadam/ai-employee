@@ -28,3 +28,6 @@ python-json-logger==3.2.1
 
 # Billing
 stripe==11.4.1
+
+# Monitoring (optional — init skipped when SENTRY_DSN unset)
+sentry-sdk[fastapi]==2.19.2

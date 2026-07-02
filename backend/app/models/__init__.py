@@ -95,7 +95,8 @@ class Business(Base, TimestampMixin):
     # Weekly schedule: {"monday": {"open": "08:00", "close": "17:00"}, ...}
     working_hours: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
     ai_instructions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    phone_number: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    phone_number: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, unique=True)
+    telnyx_phone_number_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     escalation_phone: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     public_slug: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, unique=True, index=True)
 
@@ -117,6 +118,11 @@ class Business(Base, TimestampMixin):
         DateTime(timezone=True), nullable=True
     )
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    reminders_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    @property
+    def phone_provisioned(self) -> bool:
+        return bool(self.telnyx_phone_number_id)
 
     owner: Mapped["User"] = relationship("User", back_populates="businesses")
     services: Mapped[list["BusinessService"]] = relationship(
@@ -288,6 +294,9 @@ class Appointment(Base, TimestampMixin):
     )
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     confirmation_sent_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    reminder_sent_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
 

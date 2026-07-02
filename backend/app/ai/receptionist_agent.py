@@ -57,6 +57,7 @@ class ReceptionistAgent:
             rules,
             caller_phone=caller_phone,
             voice_mode=voice_mode,
+            sms_functional=self.tools_impl.notifications.is_sms_functional(),
         )
         return AIMessage(role="system", content=prompt)
 
@@ -257,7 +258,6 @@ def create_text_session(
 
 
 def get_ai_provider() -> AIProvider:
-    from app.config import get_settings
+    from app.integrations.registry import get_ai_provider as resolve_ai_provider
 
-    settings = get_settings()
-    return GroqProvider(api_key=settings.groq_api_key, model=settings.groq_model)
+    return resolve_ai_provider()

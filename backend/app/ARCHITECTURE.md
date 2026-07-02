@@ -31,10 +31,13 @@ What is **built and on `main`** vs what remains.
 
 | Capability | Status |
 |------------|--------|
-| Real-time voice streaming (`VOICE_MODE=stream`) | Not implemented — WebSocket rejected |
-| Call transcript HTTP API + UI | Data in DB; no dedicated route |
-| Real email delivery | Logs only |
-| Automated phone number provisioning | Manual Telnyx + Settings |
+| Real-time voice streaming (`VOICE_MODE=stream`) | **Gather fallback** — `VoiceModeService`; TeXML gather is production path |
+| Appointment reminders | **Done** — `ReminderService` + cron endpoint |
+| Outbound callback calls | **Done** — `POST /calls/outbound` |
+| Monitoring (Sentry, health) | **Done** — optional Sentry, `/health/live`, `/health/ready` |
+| Call transcript HTTP API + UI | **Done** — `GET /conversations/{id}` + `/dashboard/conversations/{id}` |
+| Real email delivery | **Done** — SMTP when configured; owner escalation email fallback |
+| Automated phone number provisioning | **Done** — `PhoneProvisioningService` + `/business/phone/*` |
 | CI pipeline | `.github/workflows/ci.yml` on push/PR to `main` |
 | Outbound calling | Schema only |
 
@@ -183,9 +186,36 @@ CI (`.github/workflows/ci.yml`) runs the full suite on every push/PR to `main`.
 - **New voice UX** (prompts, STT handling) → `voice/` only
 - **New text-chat UX** → `ai/prompts.py` + guards in `receptionist_tools.py` / `session_state.py`
 - **New HTTP endpoint** → `api/` + existing service
-- **New external provider** → implement `ai/provider.py` or `voice/provider.py` ABC
+- **New external provider** → implement adapter in `integrations/adapters/`, register in `integrations/registry.py`
 
 When changing booking behavior, update **prompts + session guards + spec tests** together.
+
+---
+
+## Swappable integrations (production pattern)
+
+External systems are wired through **`integrations/registry.py`** (composition root). Business logic must not import vendor SDKs directly.
+
+| Capability | Port (interface) | Env var | Current adapter |
+|------------|------------------|---------|-----------------|
+| LLM | `ai/provider.py` → `AIProvider` | `AI_PROVIDER` | Groq |
+| Outbound SMS | `services/messaging/provider.py` | `SMS_PROVIDER` | Telnyx |
+| Inbound SMS webhook | `integrations/contracts.py` → `SmsInboundAdapter` | follows `SMS_PROVIDER` | Telnyx |
+| Email | `integrations/contracts.py` → `EmailProvider` | `EMAIL_PROVIDER` | SMTP / dev log |
+| Voice call control | `integrations/contracts.py` → `VoiceCallControl` | `VOICE_PROVIDER` | Telnyx TeXML |
+| Voice webhooks | `integrations/contracts.py` → `VoiceWebhookAdapter` | follows `VOICE_PROVIDER` | Telnyx |
+| Country defaults | `domain/telecom.py` | `Business.country` | AU, GB, EU, NZ, JP, CN, RU, US |
+
+**To swap a provider (e.g. Telnyx → Twilio):**
+
+1. Add `integrations/adapters/twilio_*.py` implementing the port interface.
+2. Register the name in `integrations/registry.py` (`_VOICE_CONTROLS`, `_SMS_INBOUND`, etc.).
+3. Set env (`VOICE_PROVIDER=twilio`, `SMS_PROVIDER=twilio`) — no changes to `call_service`, `receptionist_tools`, or routes.
+4. Add spec tests for the new adapter; keep vendor JSON parsing inside the adapter only.
+
+**Ops:** `GET /health` reports active provider names and `configured` flags (no secrets).
+
+**Dependency rule:** `api/` and `services/` → `integrations/registry` → `integrations/adapters/` → vendor SDK/HTTP. Never the reverse.
 
 ---
 
@@ -195,7 +225,7 @@ When changing booking behavior, update **prompts + session guards + spec tests**
 |----------|------|
 | P0 | User QA on text + voice booking paths |
 | P1 | Production deploy, HTTPS, prod env |
-| P2 | `GET /calls/{id}` or similar for full transcript; real email |
+| P2 | ~~Transcript UI, SMTP email, README~~ | **Done** (phone provisioning manual) |
 | P3 | ~~Text spec tests, CI, delete shims~~ | **Done** (2026-06-30) |
 | P4 | Stream mode, reminders, outbound, monitoring |
 

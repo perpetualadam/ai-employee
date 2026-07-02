@@ -1,23 +1,22 @@
 """SMS and email notification service."""
 
 import logging
-import smtplib
 from datetime import UTC, datetime
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import Appointment, Business, Customer
-from app.voice import telnyx_client
+from app.integrations.registry import get_email_provider
+from app.models import Appointment, Business, Customer, User
+from app.services.messaging.factory import get_sms_provider_for_business
+from app.voice.slots import spoken_local_time
 
 logger = logging.getLogger(__name__)
 
 
 class NotificationService:
-    """Sends customer notifications via Telnyx SMS and optional SMTP email."""
+    """Sends customer notifications via configurable SMS and email providers."""
 
     def __init__(self, db: Session, business: Business):
         self.db = db
@@ -27,12 +26,25 @@ class NotificationService:
         settings = get_settings()
         return self.business.phone_number or settings.telnyx_phone_number or None
 
-    def _smtp_configured(self) -> bool:
+    def is_sms_functional(self) -> bool:
+        """True when outbound SMS can be sent for this business (provider + sender configured)."""
+        provider = get_sms_provider_for_business(self.business)
+        if provider.provider_name == "dev_log":
+            return False
+        if not provider.is_configured():
+            return False
+        if not self._from_number():
+            return False
         settings = get_settings()
-        return bool(settings.smtp_host and settings.smtp_from_email)
+        if provider.provider_name == "telnyx" and not settings.telnyx_messaging_profile_id:
+            return False
+        return True
 
     def send_sms(self, phone: str, message: str) -> dict:
-        if not telnyx_client.is_telnyx_configured():
+        provider = get_sms_provider_for_business(self.business)
+        if not provider.is_configured():
+            provider = get_sms_provider_for_business(None)
+        if provider.provider_name == "dev_log" or not provider.is_configured():
             logger.info(
                 "SMS logged (dev mode)",
                 extra={"to": phone, "message": message, "business_id": self.business.id},
@@ -42,47 +54,44 @@ class NotificationService:
         from_number = self._from_number()
         if not from_number:
             logger.error("No from number for SMS", extra={"business_id": self.business.id})
-            return {"sent": False, "provider": "telnyx", "error": "No sender phone configured"}
-
-        try:
-            result = telnyx_client.send_sms(from_number, phone, message)
             return {
-                "sent": True,
-                "provider": "telnyx",
-                "phone": phone,
-                "message": message,
-                "id": result.get("id"),
+                "sent": False,
+                "provider": provider.provider_name,
+                "error": "No sender phone configured",
             }
-        except Exception as exc:
-            logger.exception("Telnyx SMS failed", extra={"to": phone})
-            return {"sent": False, "provider": "telnyx", "error": str(exc)}
+
+        result = provider.send_sms(from_number, phone, message)
+        if not result.get("sent"):
+            logger.error(
+                "SMS delivery failed",
+                extra={
+                    "to": phone,
+                    "provider": provider.provider_name,
+                    "error": result.get("error"),
+                },
+            )
+        return result
 
     def send_email(self, email: str, subject: str, body: str) -> dict:
-        if not self._smtp_configured():
+        provider = get_email_provider()
+        if provider.provider_name == "dev_log" or not provider.is_configured():
             logger.info(
                 "Email logged (dev mode)",
                 extra={"to": email, "subject": subject, "business_id": self.business.id},
             )
             return {"sent": True, "provider": "dev_log", "email": email, "subject": subject}
 
-        settings = get_settings()
-        msg = MIMEMultipart()
-        msg["From"] = settings.smtp_from_email
-        msg["To"] = email
-        msg["Subject"] = subject
-        msg.attach(MIMEText(body, "plain"))
-
-        try:
-            with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=30) as server:
-                if settings.smtp_use_tls:
-                    server.starttls()
-                if settings.smtp_user:
-                    server.login(settings.smtp_user, settings.smtp_password)
-                server.sendmail(settings.smtp_from_email, [email], msg.as_string())
-            return {"sent": True, "provider": "smtp", "email": email, "subject": subject}
-        except Exception as exc:
-            logger.exception("SMTP email failed", extra={"to": email})
-            return {"sent": False, "provider": "smtp", "error": str(exc)}
+        result = provider.send_email(email, subject, body)
+        if not result.get("sent"):
+            logger.error(
+                "Email delivery failed",
+                extra={
+                    "to": email,
+                    "provider": provider.provider_name,
+                    "error": result.get("error"),
+                },
+            )
+        return result
 
     def send_booking_confirmation_email(
         self,
@@ -94,7 +103,10 @@ class NotificationService:
 
         tz = ZoneInfo(self.business.timezone)
         local_start = appointment.start_time.astimezone(tz)
-        when_label = local_start.strftime("%A, %B %d at %I:%M %p").replace("  ", " ")
+        when_label = (
+            f"{local_start.strftime('%A, %B')} {local_start.day} "
+            f"at {spoken_local_time(local_start)}"
+        )
 
         subject = f"Your appointment with {self.business.name}"
         body = (
@@ -113,24 +125,39 @@ class NotificationService:
         return result
 
     def notify_owner_escalation(self, reason: str, caller_phone: str | None) -> bool:
-        """Text the business owner when the AI escalates (chat or failed auto-handling)."""
-        owner_phone = self.business.escalation_phone or self.business.phone_number
-        if not owner_phone:
-            logger.warning(
-                "Escalation with no owner phone configured",
-                extra={"business_id": self.business.id, "reason": reason},
-            )
-            return False
-
+        """Alert the business owner when the AI escalates (SMS first, then owner email)."""
         caller = (caller_phone or "").strip()
         if not caller or caller in ("text-chat", "unknown"):
             caller_label = "a customer (no number on file)"
         else:
             caller_label = caller
 
-        message = (
-            f"AI Employee ({self.business.name}): {reason} "
-            f"Caller: {caller_label}. Please call them back as soon as you can."
+        owner_phone = self.business.escalation_phone or self.business.phone_number
+        if owner_phone:
+            message = (
+                f"AI Employee ({self.business.name}): {reason} "
+                f"Caller: {caller_label}. Please call them back as soon as you can."
+            )
+            sms_result = self.send_sms(owner_phone, message)
+            if sms_result.get("sent"):
+                return True
+
+        owner = self.db.query(User).filter(User.id == self.business.owner_id).first()
+        if owner and owner.email:
+            subject = f"AI Employee escalation — {self.business.name}"
+            body = (
+                f"Your AI receptionist escalated a conversation.\n\n"
+                f"Reason: {reason}\n"
+                f"Caller: {caller_label}\n\n"
+                f"Please call them back as soon as you can.\n\n"
+                f"— AI Employee"
+            )
+            email_result = self.send_email(owner.email, subject, body)
+            if email_result.get("sent"):
+                return True
+
+        logger.warning(
+            "Escalation with no owner notification delivered",
+            extra={"business_id": self.business.id, "reason": reason},
         )
-        result = self.send_sms(owner_phone, message)
-        return bool(result.get("sent"))
+        return False

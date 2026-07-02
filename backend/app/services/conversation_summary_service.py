@@ -4,7 +4,6 @@ import logging
 
 from sqlalchemy.orm import Session
 
-from app.ai.groq_provider import GroqProvider
 from app.ai.provider import AIMessage
 from app.config import get_settings
 from app.models import AIActivityLog, CallLog
@@ -83,7 +82,9 @@ class ConversationSummaryService:
         )
 
         try:
-            provider = GroqProvider(api_key=settings.groq_api_key, model=settings.groq_model)
+            from app.integrations.registry import get_ai_provider
+
+            provider = get_ai_provider()
             response = await provider.chat([AIMessage(role="user", content=prompt)])
             summary = (response.content or "").strip()
             if not summary:

@@ -15,6 +15,7 @@ def sample_business() -> MagicMock:
     business = MagicMock()
     business.id = "047694b9-6e63-4bbf-b186-280e0e23e968"
     business.timezone = "America/New_York"
+    business.country = "US"
     business.working_hours = {
         "monday": {"open": "08:00", "close": "17:00"},
         "tuesday": {"open": "08:00", "close": "17:00"},

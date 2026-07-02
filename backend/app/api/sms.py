@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.services.sms_service import SmsService
-from app.voice.messaging_webhook import parse_inbound_sms_event
+from app.integrations.registry import get_sms_inbound_adapter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/sms", tags=["sms"])
@@ -30,7 +30,7 @@ async def inbound_sms(
     Telnyx Messaging Profile webhook for message.received events.
     Handles SMS recovery/continuation — not a standalone text receptionist.
     """
-    event = await parse_inbound_sms_event(request)
+    event = await get_sms_inbound_adapter().parse_inbound(request)
     if event is None:
         return Response(status_code=200)
 

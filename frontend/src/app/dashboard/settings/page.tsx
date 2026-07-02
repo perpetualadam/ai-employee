@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { CopySnippet } from "@/components/copy-snippet";
 import { DashboardShell } from "@/components/dashboard/shell";
+import { PhoneProvisioningPanel } from "@/components/phone-provisioning-panel";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -18,12 +19,12 @@ import { useDashboardAuth } from "@/hooks/use-dashboard-auth";
 import { api, ApiError } from "@/lib/api";
 
 export default function SettingsPage() {
-  const { businessName, business, loading: authLoading } = useDashboardAuth();
+  const { businessName, business, loading: authLoading, refreshBusiness } = useDashboardAuth();
   const [form, setForm] = useState({
     name: "",
-    phone_number: "",
     escalation_phone: "",
     timezone: "",
+    reminders_enabled: true,
   });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -38,9 +39,9 @@ export default function SettingsPage() {
     if (business) {
       setForm({
         name: business.name,
-        phone_number: business.phone_number ?? "",
         escalation_phone: business.escalation_phone ?? "",
         timezone: business.timezone,
+        reminders_enabled: business.reminders_enabled ?? true,
       });
     }
   }, [business]);
@@ -52,9 +53,9 @@ export default function SettingsPage() {
     try {
       await api.updateBusiness({
         name: form.name,
-        phone_number: form.phone_number || undefined,
         escalation_phone: form.escalation_phone || undefined,
         timezone: form.timezone,
+        reminders_enabled: form.reminders_enabled,
       });
       setMessage("Settings saved.");
     } catch (err) {
@@ -113,18 +114,6 @@ export default function SettingsPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="phone">Telnyx phone number (E.164)</Label>
-              <Input
-                id="phone"
-                value={form.phone_number}
-                onChange={(e) => setForm({ ...form, phone_number: e.target.value })}
-                placeholder="+15551234567"
-              />
-              <p className="text-xs text-muted-foreground">
-                Must match your Telnyx number. Used to route inbound calls to this business.
-              </p>
-            </div>
-            <div className="space-y-2">
               <Label htmlFor="escalation">Escalation phone</Label>
               <Input
                 id="escalation"
@@ -145,11 +134,39 @@ export default function SettingsPage() {
                 placeholder="America/New_York"
               />
             </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.reminders_enabled}
+                onChange={(e) =>
+                  setForm({ ...form, reminders_enabled: e.target.checked })
+                }
+              />
+              Send automatic appointment reminders (~24 hours before)
+            </label>
             {error && <p className="text-sm text-destructive">{error}</p>}
             {message && <p className="text-sm text-green-600">{message}</p>}
             <Button onClick={handleSave} disabled={saving}>
               {saving ? "Saving..." : "Save changes"}
             </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Business phone line</CardTitle>
+            <CardDescription>
+              Search and provision a number, or connect one you already own in Telnyx
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <PhoneProvisioningPanel
+              business={business}
+              onPhoneUpdated={async () => {
+                await refreshBusiness();
+                setMessage("Phone number updated.");
+              }}
+            />
           </CardContent>
         </Card>
 

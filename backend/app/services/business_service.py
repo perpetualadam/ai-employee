@@ -2,14 +2,16 @@
 
 import logging
 
+from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.models import Business, BusinessEmergencyRule, BusinessService
 from app.schemas import (
+    BusinessServiceCreate,
     BusinessUpdate,
     EmergencyRuleCreate,
-    BusinessServiceCreate,
 )
+from app.services.phone_provisioning_service import PhoneProvisioningService
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +20,31 @@ class BusinessServiceManager:
     @staticmethod
     def update_business(db: Session, business: Business, data: BusinessUpdate) -> Business:
         update_data = data.model_dump(exclude_unset=True)
+        phone_number = update_data.pop("phone_number", None)
+        escalation_phone = update_data.pop("escalation_phone", None)
+
+        if phone_number is not None:
+            if business.phone_provisioned:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Provisioned phone numbers cannot be changed here.",
+                )
+            PhoneProvisioningService.save_manual_phone(db, business, phone_number)
+
+        if escalation_phone is not None:
+            if escalation_phone.strip():
+                from app.domain.phone import is_plausible_phone, normalize_phone
+
+                normalized = normalize_phone(escalation_phone.strip(), business.country)
+                if not is_plausible_phone(normalized, business.country):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Enter a valid escalation phone number.",
+                    )
+                business.escalation_phone = normalized
+            else:
+                business.escalation_phone = None
+
         for field, value in update_data.items():
             setattr(business, field, value)
         db.commit()

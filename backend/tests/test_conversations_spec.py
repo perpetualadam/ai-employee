@@ -10,6 +10,7 @@ from uuid import uuid4
 from app.domain.conversation import channel_label, infer_channel
 from app.models.enums import CallDirection, CallStatus, ConversationChannel
 from app.services.address_confirmation_service import AddressConfirmationService
+from app.schemas import ConversationLeadCard
 from app.services.conversation_service import ConversationService
 from app.services.conversation_summary_service import ConversationSummaryService
 from app.services.notification_service import NotificationService
@@ -91,8 +92,36 @@ class AddressConfirmationSpecification(unittest.IsolatedAsyncioTestCase):
         call = _sample_call(caller_phone="unknown")
 
         result = AddressConfirmationService.create_and_send_link(db, business, call)
+        self.assertFalse(result["sent"])
         self.assertFalse(result["link_created"])
-        self.assertIn("phone", result["error"].lower())
+        self.assertIn("email", result["error"].lower())
+
+    async def test_send_address_link_via_email_only(self) -> None:
+        db = MagicMock()
+        business = MagicMock()
+        business.id = "biz-1"
+        business.name = "ABC Plumbing"
+        call = _sample_call(caller_phone="unknown")
+
+        notifications = MagicMock()
+        notifications.send_email.return_value = {"sent": True, "provider": "dev_log"}
+
+        with patch(
+            "app.services.address_confirmation_service.NotificationService",
+            return_value=notifications,
+        ):
+            result = AddressConfirmationService.create_and_send_link(
+                db,
+                business,
+                call,
+                customer_name="John Smith",
+                email="john@example.com",
+            )
+
+        self.assertTrue(result["sent"])
+        self.assertTrue(result["email_sent"])
+        self.assertFalse(result.get("sms_sent"))
+        notifications.send_email.assert_called_once()
 
     async def test_confirm_address_updates_customer_and_call(self) -> None:
         db = MagicMock()
@@ -165,7 +194,14 @@ class BookingEmailSpecification(unittest.TestCase):
         appt.start_time = datetime(2026, 7, 2, 14, 0, tzinfo=UTC)
 
         svc = NotificationService(db, business)
-        with patch.object(svc, "_smtp_configured", return_value=False):
+        dev_provider = MagicMock()
+        dev_provider.provider_name = "dev_log"
+        dev_provider.is_configured.return_value = False
+        dev_provider.send_email.return_value = {"sent": True, "provider": "dev_log"}
+        with patch(
+            "app.services.notification_service.get_email_provider",
+            return_value=dev_provider,
+        ):
             result = svc.send_booking_confirmation_email(customer, appt)
         self.assertTrue(result["sent"])
         self.assertEqual(result["provider"], "dev_log")
@@ -265,3 +301,87 @@ class MessagingWebhookSpecification(unittest.IsolatedAsyncioTestCase):
             settings_mock.return_value.debug = True
             result = await parse_inbound_sms_event(request)
         self.assertIsNone(result)
+
+
+class ConversationDetailSpecification(unittest.TestCase):
+    def test_get_conversation_exposes_messages_and_transcript(self) -> None:
+        db = MagicMock()
+        call = _sample_call(
+            conversation_history=[
+                {"role": "user", "content": "No hot water"},
+                {"role": "assistant", "content": "May I have your name?"},
+            ],
+        )
+        call.transcript = "USER: No hot water\nASSISTANT: May I have your name?"
+
+        db.query.return_value.filter.return_value.first.return_value = call
+        db.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
+
+        with patch.object(
+            ConversationService,
+            "_build_lead_card",
+            return_value=ConversationLeadCard(),
+        ):
+            detail = ConversationService.get_conversation(db, "biz-1", call.id)
+
+        self.assertIsNotNone(detail)
+        assert detail is not None
+        self.assertEqual(len(detail.messages), 2)
+        self.assertEqual(detail.messages[0].content, "No hot water")
+        self.assertEqual(detail.transcript, call.transcript)
+
+
+class OwnerEscalationEmailSpecification(unittest.TestCase):
+    def test_notify_owner_falls_back_to_email_when_sms_fails(self) -> None:
+        db = MagicMock()
+        business = MagicMock()
+        business.id = "biz-1"
+        business.name = "ABC Plumbing"
+        business.owner_id = "owner-1"
+        business.escalation_phone = "+15559876543"
+        business.phone_number = None
+
+        owner = MagicMock()
+        owner.email = "owner@example.com"
+        db.query.return_value.filter.return_value.first.return_value = owner
+
+        svc = NotificationService(db, business)
+        with patch.object(svc, "send_sms", return_value={"sent": False, "provider": "telnyx"}):
+            with patch.object(
+                svc,
+                "send_email",
+                return_value={"sent": True, "provider": "smtp"},
+            ) as email_mock:
+                notified = svc.notify_owner_escalation("Customer wants a person", "+15551234567")
+
+        self.assertTrue(notified)
+        email_mock.assert_called_once()
+        self.assertEqual(email_mock.call_args[0][0], "owner@example.com")
+
+
+class SmtpEmailSpecification(unittest.TestCase):
+    def test_send_email_uses_smtp_when_configured(self) -> None:
+        db = MagicMock()
+        business = MagicMock()
+        svc = NotificationService(db, business)
+
+        smtp_provider = MagicMock()
+        smtp_provider.provider_name = "smtp"
+        smtp_provider.is_configured.return_value = True
+        smtp_provider.send_email.return_value = {
+            "sent": True,
+            "provider": "smtp",
+            "email": "john@example.com",
+            "subject": "Hello",
+        }
+        with patch(
+            "app.services.notification_service.get_email_provider",
+            return_value=smtp_provider,
+        ):
+            result = svc.send_email("john@example.com", "Hello", "Body text")
+
+        self.assertTrue(result["sent"])
+        self.assertEqual(result["provider"], "smtp")
+        smtp_provider.send_email.assert_called_once_with(
+            "john@example.com", "Hello", "Body text"
+        )

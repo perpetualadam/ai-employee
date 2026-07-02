@@ -17,17 +17,40 @@ TOKEN_TTL_HOURS = 24
 
 class WebContinuationService:
     @staticmethod
-    def create_for_call(db: Session, business: Business, call_log: CallLog) -> dict:
-        token_value = secrets.token_urlsafe(24)
-        record = WebContinuationToken(
-            id=str(uuid4()),
-            business_id=business.id,
-            call_log_id=call_log.id,
-            token=token_value,
-            expires_at=datetime.now(UTC) + timedelta(hours=TOKEN_TTL_HOURS),
-        )
-        db.add(record)
-        db.commit()
+    def create_for_call(
+        db: Session,
+        business: Business,
+        call_log: CallLog,
+        *,
+        reuse_existing: bool = True,
+    ) -> dict:
+        existing = None
+        if reuse_existing:
+            existing = (
+                db.query(WebContinuationToken)
+                .filter(
+                    WebContinuationToken.call_log_id == call_log.id,
+                    WebContinuationToken.expires_at > datetime.now(UTC),
+                )
+                .order_by(WebContinuationToken.created_at.desc())
+                .first()
+            )
+
+        if existing:
+            token_value = existing.token
+            link_created = False
+        else:
+            token_value = secrets.token_urlsafe(24)
+            record = WebContinuationToken(
+                id=str(uuid4()),
+                business_id=business.id,
+                call_log_id=call_log.id,
+                token=token_value,
+                expires_at=datetime.now(UTC) + timedelta(hours=TOKEN_TTL_HOURS),
+            )
+            db.add(record)
+            db.commit()
+            link_created = True
 
         settings = get_settings()
         chat_url = f"{settings.frontend_url.rstrip('/')}/continue/{token_value}"
@@ -37,13 +60,18 @@ class WebContinuationService:
 
         logger.info(
             "Web continuation link created",
-            extra={"call_log_id": call_log.id, "business_id": business.id},
+            extra={
+                "call_log_id": call_log.id,
+                "business_id": business.id,
+                "link_created": link_created,
+            },
         )
         return {
             "continue_url": chat_url,
             "standalone_chat_url": slug_url,
             "token": token_value,
             "expires_hours": TOKEN_TTL_HOURS,
+            "link_created": link_created,
         }
 
     @staticmethod
