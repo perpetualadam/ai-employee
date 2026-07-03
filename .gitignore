@@ -22,6 +22,9 @@ out/
 .DS_Store
 Thumbs.db
 
+# Accidental nested clone (see DEPLOY.md — clone elsewhere, not inside this repo)
+ai-employee/
+
 # Docker
 postgres_data/
 backups/
