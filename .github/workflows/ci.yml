@@ -30,6 +30,7 @@ jobs:
         run: python -m unittest discover -s tests -v
         env:
           PYTHONPATH: .
+          GROQ_API_KEY: ci-dummy-not-used
 
   frontend:
     name: Frontend lint and build
