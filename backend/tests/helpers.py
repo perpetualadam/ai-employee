@@ -6,16 +6,27 @@ from datetime import UTC, datetime
 from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
 
+from app.models.enums import Industry
 from app.voice.session_state import VoiceSessionState
 
 NY = ZoneInfo("America/New_York")
 
 
-def sample_business() -> MagicMock:
+def sample_business(
+    *,
+    industry: Industry = Industry.PLUMBING,
+    country: str = "US",
+    name: str = "Test Plumbing Co",
+) -> MagicMock:
     business = MagicMock()
     business.id = "047694b9-6e63-4bbf-b186-280e0e23e968"
+    business.name = name
+    business.industry = industry
+    business.country = country
     business.timezone = "America/New_York"
-    business.country = "US"
+    business.currency = "USD"
+    business.phone_number = "+15551234567"
+    business.ai_instructions = None
     business.working_hours = {
         "monday": {"open": "08:00", "close": "17:00"},
         "tuesday": {"open": "08:00", "close": "17:00"},

@@ -3,9 +3,13 @@
 import unittest
 from unittest.mock import MagicMock
 
+from app.models.enums import Industry
+
 from app.domain.intake import normalize_caller_speech
-from app.voice.gather_prompts import is_truncated_speech, is_unreliable_speech
+from app.domain.trades.registry import resolve_trade_context
+from app.voice.gather_prompts import empty_gather_prompt, is_truncated_speech, is_unreliable_speech
 from app.voice.stt.gather_stt import GatherSpeechSTT
+from tests.helpers import sample_business
 
 
 class GatherPromptSpecification(unittest.TestCase):
@@ -34,6 +38,12 @@ class GatherPromptSpecification(unittest.TestCase):
         self.assertFalse(
             is_unreliable_speech("my name is Brian May", 0.75, call_log)
         )
+
+    def test_empty_gather_first_turn_is_trade_specific(self) -> None:
+        call_log = MagicMock(conversation_history=[])
+        trade = resolve_trade_context(sample_business(industry=Industry.PLASTERER))
+        prompt = empty_gather_prompt(call_log, trade)
+        self.assertIn("replastering", prompt.lower())
 
 
 if __name__ == "__main__":

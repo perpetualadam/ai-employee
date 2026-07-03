@@ -2,6 +2,7 @@
 
 import unittest
 
+from app.models.enums import Industry
 from app.domain.intake import (
     address_appears_in_caller_text,
     extract_spoken_name,
@@ -76,6 +77,11 @@ class IntakeSpecification(unittest.TestCase):
         for bad in ("having a week", "having a water leak", "water leak"):
             with self.subTest(name=bad):
                 self.assertFalse(is_valid_customer_name(bad))
+
+    def test_rejects_trade_specific_garbled_names(self) -> None:
+        self.assertFalse(
+            is_valid_customer_name("boiler breakdown", industry=Industry.GAS_ENGINEER)
+        )
 
     def test_normalizes_leak_week_stt_confusion(self) -> None:
         self.assertEqual(normalize_caller_speech("My name is having a week"), "I have a leak")
