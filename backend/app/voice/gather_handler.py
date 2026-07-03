@@ -50,16 +50,16 @@ async def handle_gather_result(
     )
     speech_confidence = getattr(chunk, "confidence", None)
 
-        if is_unreliable_speech(chunk.text, speech_confidence, call_log):
-            if is_low_confidence_speech(chunk.text, speech_confidence):
-                retry_prompt = low_confidence_gather_prompt(call_log, trade)
-            else:
-                retry_prompt = truncated_gather_prompt(call_log, trade)
-            return build_say_and_gather(
-                retry_prompt,
-                settings.public_api_url,
-                call_log.id,
-            )
+    if is_unreliable_speech(chunk.text, speech_confidence, call_log):
+        if is_low_confidence_speech(chunk.text, speech_confidence):
+            retry_prompt = low_confidence_gather_prompt(call_log, trade)
+        else:
+            retry_prompt = truncated_gather_prompt(call_log, trade)
+        return build_say_and_gather(
+            retry_prompt,
+            settings.public_api_url,
+            call_log.id,
+        )
 
     speech_text = normalize_caller_speech(chunk.text, business.industry)
     texml, _ = await process_speech_turn(db, call_log, business, speech_text)
