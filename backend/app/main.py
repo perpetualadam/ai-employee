@@ -9,7 +9,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from app.api import appointments, auth, billing, business, calls, conversations, customers, dashboard, internal, jobs, onboarding, phone, public, receptionist, sms, voice
 from app.config import get_settings
 from app.core.logging_config import setup_logging
-from app.core.monitoring import check_database, init_sentry
+from app.core.monitoring import check_database, init_sentry, sentry_active
 from app.database import get_db
 
 settings = get_settings()
@@ -99,5 +99,6 @@ def health_check(db=Depends(get_db)) -> dict:
             "phone_provisioning_configured": telnyx_client.is_phone_provisioning_configured(),
         },
         "voice_mode": VoiceModeService.status(),
+        "monitoring": {"sentry": sentry_active()},
         "registered_adapters": list_registered_integrations(),
     }

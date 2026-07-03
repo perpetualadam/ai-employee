@@ -152,7 +152,7 @@ async def process_speech_turn(
             True,
         )
 
-    return build_say_and_gather(reply, settings.public_api_url, call_log.id), False
+    return build_say_and_gather(reply, settings.public_api_url, call_log.id, call_sid=call_log.external_call_id), False
 
 
 def handle_inbound_call(db: Session, call_sid: str, from_number: str, to_number: str) -> str:
@@ -177,6 +177,7 @@ def handle_inbound_call(db: Session, call_sid: str, from_number: str, to_number:
             "Sorry about that. After the tone, please continue.",
             settings.public_api_url,
             existing.id,
+            call_sid=call_sid,
         )
 
     business = find_business_by_phone(db, to_number)
@@ -199,7 +200,7 @@ def handle_inbound_call(db: Session, call_sid: str, from_number: str, to_number:
         )
 
     call = create_voice_call(db, business, call_sid, from_number)
-    return build_greeting(business, settings.public_api_url, call.id)
+    return build_greeting(business, settings.public_api_url, call.id, call_sid=call_sid)
 
 
 def handle_call_status(

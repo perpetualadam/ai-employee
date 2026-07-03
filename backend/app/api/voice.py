@@ -61,7 +61,7 @@ async def inbound_call(
     effective_mode = VoiceModeService.effective_mode()
     if settings.voice_mode == "stream" and effective_mode == "gather":
         logger.info(
-            "VOICE_MODE=stream requested; using TeXML gather (Telnyx production path)",
+            "VOICE_MODE=stream requested; using TeXML gather (Deepgram/Telnyx stream not fully configured)",
             extra={"requested": settings.voice_mode, "effective": effective_mode},
         )
 
@@ -182,9 +182,14 @@ async def outbound_answer(
 
 
 @router.websocket("/stream")
-async def media_stream(websocket: WebSocket) -> None:
-    """
-    Real-time media stream (legacy endpoint).
-    Telnyx uses TeXML Gather for speech; stream mode is not implemented for Telnyx.
-    """
-    await handle_media_stream(websocket)
+async def media_stream(
+    websocket: WebSocket,
+    call_log_id: str = Query(...),
+    call_sid: str = Query(default=""),
+) -> None:
+    """Telnyx TeXML media stream — Deepgram live STT when VOICE_MODE=stream."""
+    await handle_media_stream(
+        websocket,
+        call_log_id=call_log_id,
+        call_sid=call_sid or None,
+    )

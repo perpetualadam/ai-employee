@@ -42,6 +42,7 @@ async def handle_gather_result(
             empty_gather_prompt(call_log, trade),
             settings.public_api_url,
             call_log.id,
+            call_sid=call_log.external_call_id,
         )
 
     chunk = GatherSpeechSTT.from_speech_result(
@@ -59,6 +60,7 @@ async def handle_gather_result(
             retry_prompt,
             settings.public_api_url,
             call_log.id,
+            call_sid=call_log.external_call_id,
         )
 
     speech_text = normalize_caller_speech(chunk.text, business.industry)

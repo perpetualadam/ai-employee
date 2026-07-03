@@ -15,7 +15,12 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "AI Employee — AI Receptionist for Trade Businesses",
   description:
-    "AI receptionist that answers calls, qualifies leads, books jobs, and updates your CRM. Built for plumbers and trade businesses.",
+    "Fair launch: AI receptionist that answers calls, books jobs, and updates your CRM. Built for plumbers, gas engineers, mechanics, and 14+ trades.",
+  openGraph: {
+    title: "AI Employee — Never miss a lead",
+    description:
+      "24/7 AI receptionist for trade businesses. Answers calls, books appointments, sends confirmations.",
+  },
 };
 
 export default function RootLayout({

@@ -52,16 +52,17 @@ export default function ConversationDetailPage() {
     );
   }
 
-  const lead = detail.lead_card;
+  const conversation = detail;
+  const lead = conversation.lead_card;
 
   async function handleCallBack() {
     setCalling(true);
     setCallMessage("");
     try {
       const result = await api.placeOutboundCall({
-        customer_id: detail.customer_id ?? undefined,
-        phone: lead.customer_phone ?? detail.caller_phone ?? undefined,
-        reason: detail.ai_summary || detail.summary || undefined,
+        customer_id: conversation.customer_id ?? undefined,
+        phone: lead.customer_phone ?? conversation.caller_phone ?? undefined,
+        reason: conversation.ai_summary || conversation.summary || undefined,
       });
       setCallMessage(result.message);
     } catch (err) {

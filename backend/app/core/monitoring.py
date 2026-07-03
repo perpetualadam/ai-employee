@@ -45,6 +45,11 @@ def init_sentry() -> bool:
         return False
 
 
+def sentry_active() -> bool:
+    """True when Sentry SDK initialized successfully."""
+    return _sentry_initialized
+
+
 def check_database(db: Session) -> dict:
     try:
         db.execute(text("SELECT 1"))

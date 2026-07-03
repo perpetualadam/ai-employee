@@ -26,6 +26,7 @@ class VoiceModeService:
             settings.deepgram_api_key
             and telnyx_client.is_telnyx_configured()
             and settings.telnyx_texml_connection_id
+            and settings.telnyx_account_sid
         )
 
     @staticmethod
@@ -36,8 +37,10 @@ class VoiceModeService:
             "effective_mode": VoiceModeService.effective_mode(),
             "streaming_available": VoiceModeService.streaming_available(),
             "production_recommendation": "gather",
+            "deepgram_configured": bool(settings.deepgram_api_key),
             "note": (
-                "Telnyx TeXML Gather is the supported production path. "
-                "VOICE_MODE=stream falls back to gather until Call Control media streaming is wired."
+                "Telnyx TeXML Gather is the default production path (VOICE_MODE=gather). "
+                "Set VOICE_MODE=stream with DEEPGRAM_API_KEY and TELNYX_ACCOUNT_SID for "
+                "lower-latency Deepgram STT via TeXML media streaming."
             ),
         }

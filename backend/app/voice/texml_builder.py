@@ -20,9 +20,52 @@ def _voice_urls(base_url: str, call_log_id: str) -> dict[str, str]:
     }
 
 
+def public_ws_url(path: str) -> str:
+    """Convert PUBLIC_API_URL to a WebSocket URL for Telnyx Stream."""
+    base = get_settings().public_api_url.rstrip("/")
+    if base.startswith("https://"):
+        return "wss://" + base.removeprefix("https://") + path
+    if base.startswith("http://"):
+        return "ws://" + base.removeprefix("http://") + path
+    return base + path
+
+
 def _say(message: str) -> str:
     text = escape(message, quote=False)
     return f'<Say voice="{VOICE}" language="{LANGUAGE}">{text}</Say>'
+
+
+def build_say_and_stream(
+    message: str,
+    base_url: str,
+    call_log_id: str,
+    call_sid: str,
+    *,
+    include_beep: bool = True,
+) -> str:
+    """Speak, beep, then stream inbound audio to Deepgram via WebSocket."""
+    urls = _voice_urls(base_url, call_log_id)
+    stream_params = urlencode({"call_log_id": call_log_id, "call_sid": call_sid})
+    stream_url = escape(public_ws_url(f"/api/v1/voice/stream?{stream_params}"), quote=True)
+    beep = ""
+    if include_beep:
+        beep_url = escape(urls["beep"], quote=True)
+        beep = f'<Play loop="1">{beep_url}</Play>'
+
+    settings = get_settings()
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<Response>"
+        f"{_say(message)}"
+        f"{beep}"
+        "<Start>"
+        f'<Stream url="{stream_url}" track="inbound_track" codec="PCMU" />'
+        "</Start>"
+        f'<Pause length="{settings.voice_gather_timeout + 25}"/>'
+        f"{_say('Sorry, I did not hear anything. Goodbye!')}"
+        "<Hangup/>"
+        "</Response>"
+    )
 
 
 def build_say_and_gather(
@@ -31,11 +74,24 @@ def build_say_and_gather(
     call_log_id: str,
     *,
     include_beep: bool = True,
+    call_sid: str | None = None,
 ) -> str:
     """
     Speak the message, play a short beep, then listen for speech.
-    Say is outside Gather so the caller hears the full prompt before the tone.
+    Uses Deepgram stream when VOICE_MODE=stream and streaming is configured.
     """
+    if call_sid:
+        from app.services.voice_mode_service import VoiceModeService
+
+        if VoiceModeService.effective_mode() == "stream":
+            return build_say_and_stream(
+                message,
+                base_url,
+                call_log_id,
+                call_sid,
+                include_beep=include_beep,
+            )
+
     urls = _voice_urls(base_url, call_log_id)
     gather_url = escape(urls["gather"], quote=True)
     settings = get_settings()
@@ -60,7 +116,7 @@ def build_say_and_gather(
     )
 
 
-def build_greeting(business: Business, base_url: str, call_log_id: str) -> str:
+def build_greeting(business: Business, base_url: str, call_log_id: str, *, call_sid: str | None = None) -> str:
     from app.domain.trades.registry import resolve_trade_context
 
     trade = resolve_trade_context(business)
@@ -69,7 +125,7 @@ def build_greeting(business: Business, base_url: str, call_log_id: str) -> str:
         "I'm the AI receptionist. "
         f"After the tone, tell me what's going on — for example {trade.voice_greeting_example}."
     )
-    return build_say_and_gather(greeting, base_url, call_log_id)
+    return build_say_and_gather(greeting, base_url, call_log_id, call_sid=call_sid)
 
 
 def build_transfer_texml(escalation_phone: str, message: str | None = None) -> str:
