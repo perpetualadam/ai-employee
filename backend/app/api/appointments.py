@@ -10,6 +10,8 @@ from app.database import get_db
 from app.models import Business
 from app.models.enums import AppointmentStatus
 from app.schemas import (
+    AppointmentBulkCancelRequest,
+    AppointmentBulkCancelResponse,
     AppointmentCreate,
     AppointmentResponse,
     AppointmentUpdate,
@@ -60,6 +62,19 @@ def book_appointment(
         return AppointmentService.create_appointment(db, business, data)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/bulk-cancel", response_model=AppointmentBulkCancelResponse)
+def bulk_cancel_appointments(
+    data: AppointmentBulkCancelRequest,
+    business: Business = Depends(get_user_primary_business),
+    db: Session = Depends(get_db),
+) -> AppointmentBulkCancelResponse:
+    """Cancel multiple appointments (e.g. clear test bookings from the calendar)."""
+    result = AppointmentService.bulk_cancel_appointments(
+        db, business.id, data.appointment_ids
+    )
+    return AppointmentBulkCancelResponse(**result)
 
 
 @router.get("/{appointment_id}", response_model=AppointmentResponse)

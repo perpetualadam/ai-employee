@@ -183,6 +183,11 @@ export const api = {
     request<Appointment>(`/appointments/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   cancelAppointment: (id: string) =>
     request<Appointment>(`/appointments/${id}/cancel`, { method: "POST" }),
+  bulkCancelAppointments: (appointmentIds: string[]) =>
+    request<{ cancelled: number; skipped: number }>("/appointments/bulk-cancel", {
+      method: "POST",
+      body: JSON.stringify({ appointment_ids: appointmentIds }),
+    }),
 
   // AI Receptionist
   chatReceptionist: (data: {

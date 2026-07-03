@@ -54,6 +54,8 @@ export default function CalendarPage() {
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkCancelling, setBulkCancelling] = useState(false);
 
   const tz = business?.timezone;
   const customerMap = useMemo(
@@ -74,6 +76,7 @@ export default function CalendarPage() {
       setAppointments(appts.filter((a) => a.status !== "cancelled"));
       setSlots(avail.slots);
       setCustomers(custs);
+      setSelectedIds(new Set());
     } finally {
       setLoading(false);
     }
@@ -151,6 +154,46 @@ export default function CalendarPage() {
     await loadDay(selectedDate);
   }
 
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selectedIds.size === appointments.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(appointments.map((a) => a.id)));
+    }
+  }
+
+  async function handleBulkCancel() {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    if (
+      !confirm(
+        `Cancel ${ids.length} selected appointment${ids.length === 1 ? "" : "s"}?`,
+      )
+    ) {
+      return;
+    }
+    setBulkCancelling(true);
+    try {
+      await api.bulkCancelAppointments(ids);
+      await loadDay(selectedDate);
+    } finally {
+      setBulkCancelling(false);
+    }
+  }
+
+  const allSelected =
+    appointments.length > 0 && selectedIds.size === appointments.length;
+  const someSelected = selectedIds.size > 0 && !allSelected;
+
   if (authLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -216,8 +259,40 @@ export default function CalendarPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Scheduled</CardTitle>
-              <CardDescription>Appointments on {selectedDate}</CardDescription>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <CardTitle>Scheduled</CardTitle>
+                  <CardDescription>Appointments on {selectedDate}</CardDescription>
+                </div>
+                {appointments.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="flex cursor-pointer items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        ref={(el) => {
+                          if (el) el.indeterminate = someSelected;
+                        }}
+                        onChange={toggleSelectAll}
+                        className="size-4 rounded border-input"
+                      />
+                      Select all
+                    </label>
+                    {selectedIds.size > 0 && (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        disabled={bulkCancelling}
+                        onClick={handleBulkCancel}
+                      >
+                        {bulkCancelling
+                          ? "Cancelling..."
+                          : `Cancel selected (${selectedIds.size})`}
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               {loading ? (
@@ -231,16 +306,25 @@ export default function CalendarPage() {
                       key={appt.id}
                       className="flex flex-wrap items-start justify-between gap-3 rounded-lg border p-3"
                     >
-                      <div>
-                        <p className="font-medium">
-                          {formatTime(appt.start_time, tz)} – {formatTime(appt.end_time, tz)}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {customerMap[appt.customer_id] ?? "Unknown"} · {appt.service_type}
-                        </p>
-                        <Badge variant="secondary" className="mt-1">
-                          {appt.status}
-                        </Badge>
+                      <div className="flex min-w-0 flex-1 items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(appt.id)}
+                          onChange={() => toggleSelected(appt.id)}
+                          aria-label={`Select appointment at ${formatTime(appt.start_time, tz)}`}
+                          className="mt-1 size-4 shrink-0 rounded border-input"
+                        />
+                        <div>
+                          <p className="font-medium">
+                            {formatTime(appt.start_time, tz)} – {formatTime(appt.end_time, tz)}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {customerMap[appt.customer_id] ?? "Unknown"} · {appt.service_type}
+                          </p>
+                          <Badge variant="secondary" className="mt-1">
+                            {appt.status}
+                          </Badge>
+                        </div>
                       </div>
                       <div className="flex gap-2">
                         <Button variant="outline" size="sm" onClick={() => openReschedule(appt)}>

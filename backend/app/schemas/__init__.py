@@ -291,6 +291,15 @@ class AppointmentResponse(BaseModel):
     created_at: datetime
 
 
+class AppointmentBulkCancelRequest(BaseModel):
+    appointment_ids: list[str] = Field(min_length=1, max_length=200)
+
+
+class AppointmentBulkCancelResponse(BaseModel):
+    cancelled: int
+    skipped: int
+
+
 class AvailabilitySlot(BaseModel):
     start_time: datetime
     end_time: datetime

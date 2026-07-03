@@ -269,3 +269,50 @@ class AppointmentService:
             extra={"business_id": business_id, "appointment_id": appointment.id},
         )
         return appointment
+
+    @staticmethod
+    def bulk_cancel_appointments(
+        db: Session,
+        business_id: str,
+        appointment_ids: list[str],
+    ) -> dict[str, int]:
+        """Cancel many appointments in one transaction; skips missing or already cancelled."""
+        unique_ids = list(dict.fromkeys(appointment_ids))
+        if not unique_ids:
+            return {"cancelled": 0, "skipped": 0}
+
+        rows = (
+            db.query(Appointment)
+            .filter(
+                Appointment.business_id == business_id,
+                Appointment.id.in_(unique_ids),
+            )
+            .all()
+        )
+        by_id = {row.id: row for row in rows}
+        cancelled = 0
+        skipped = 0
+
+        for appt_id in unique_ids:
+            appointment = by_id.get(appt_id)
+            if appointment is None or appointment.status == AppointmentStatus.CANCELLED:
+                skipped += 1
+                continue
+
+            appointment.status = AppointmentStatus.CANCELLED
+            linked_job = (
+                db.query(Job)
+                .filter(Job.appointment_id == appointment.id, Job.business_id == business_id)
+                .first()
+            )
+            if linked_job and linked_job.status not in (JobStatus.COMPLETED, JobStatus.CANCELLED):
+                linked_job.status = JobStatus.CANCELLED
+            cancelled += 1
+
+        if cancelled:
+            db.commit()
+            logger.info(
+                "Bulk appointments cancelled",
+                extra={"business_id": business_id, "cancelled": cancelled, "skipped": skipped},
+            )
+        return {"cancelled": cancelled, "skipped": skipped}
