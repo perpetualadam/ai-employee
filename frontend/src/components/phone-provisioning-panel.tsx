@@ -26,7 +26,9 @@ export function PhoneProvisioningPanel({
   compact = false,
 }: PhoneProvisioningPanelProps) {
   const [status, setStatus] = useState<PhoneProvisioningStatus | null>(null);
-  const [areaCode, setAreaCode] = useState("");
+  const [prefix, setPrefix] = useState("");
+  const [prefixLabel, setPrefixLabel] = useState("Area code");
+  const [prefixExample, setPrefixExample] = useState("");
   const [results, setResults] = useState<AvailablePhoneNumber[]>([]);
   const [manualPhone, setManualPhone] = useState(business?.phone_number ?? "");
   const [loadingStatus, setLoadingStatus] = useState(true);
@@ -62,10 +64,13 @@ export function PhoneProvisioningPanel({
     setSuccess("");
     setResults([]);
     try {
-      const data = await api.searchAvailablePhoneNumbers(areaCode.trim() || undefined);
+      const data = await api.searchAvailablePhoneNumbers(prefix.trim() || undefined);
       setResults(data.numbers);
+      // Update prefix UI hints from what the API returned for this country
+      if (data.prefix_label) setPrefixLabel(data.prefix_label);
+      if (data.prefix_example !== undefined) setPrefixExample(data.prefix_example);
       if (data.numbers.length === 0) {
-        setError("No numbers found — try a different area code.");
+        setError(`No numbers found — try a different ${data.prefix_label.toLowerCase()}.`);
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Search failed");
@@ -137,12 +142,12 @@ export function PhoneProvisioningPanel({
           </p>
           <div className="flex flex-wrap gap-2">
             <div className="flex-1 min-w-[140px] space-y-1">
-              <Label htmlFor="area-code">Area code (optional)</Label>
+              <Label htmlFor="prefix">{prefixLabel} (optional)</Label>
               <Input
-                id="area-code"
-                value={areaCode}
-                onChange={(e) => setAreaCode(e.target.value.replace(/\D/g, "").slice(0, 10))}
-                placeholder="614"
+                id="prefix"
+                value={prefix}
+                onChange={(e) => setPrefix(e.target.value.slice(0, 20))}
+                placeholder={prefixExample || prefixLabel}
               />
             </div>
             <div className="flex items-end">

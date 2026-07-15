@@ -111,17 +111,33 @@ def initiate_call(from_number: str, to_number: str, webhook_url: str) -> dict[st
 def search_available_phone_numbers(
     country_code: str,
     *,
-    area_code: str | None = None,
+    prefix: str | None = None,
     limit: int = 10,
 ) -> list[dict[str, Any]]:
-    """Search purchasable numbers with voice + SMS."""
+    """
+    Search purchasable numbers with voice + SMS for *any* supported country.
+
+    The correct Telnyx filter key is resolved from the domain
+    ``NumberSearchProfile`` for the requested country, so UK businesses get a
+    ``filter[locality]`` search, US/CA/AU businesses get
+    ``filter[national_destination_code]``, and countries without a prefix
+    filter receive a plain country-level search.  No US-centric assumptions.
+    """
+    from app.domain.telecom import get_number_search_profile  # avoid circular at module level
+
+    normalised_country = country_code.upper().strip()
     params: dict[str, str | int] = {
-        "filter[country_code]": country_code.upper(),
+        "filter[country_code]": normalised_country,
         "filter[features]": "voice,sms",
         "filter[limit]": min(max(limit, 1), 25),
     }
-    if area_code:
-        params["filter[national_destination_code]"] = area_code.strip()
+
+    if prefix:
+        search_profile = get_number_search_profile(normalised_country)
+        if search_profile.prefix_param is not None:
+            params[search_profile.prefix_param] = prefix.strip()
+        # If prefix_param is None for this country the prefix is silently
+        # ignored (Telnyx has no suitable filter for it).
 
     data = _request("GET", "/available_phone_numbers", params=params)
     items = data.get("data") or []

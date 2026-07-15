@@ -68,9 +68,9 @@ export const api = {
     request<Business>("/business", { method: "PATCH", body: JSON.stringify(data) }),
   getPhoneProvisioningStatus: () =>
     request<PhoneProvisioningStatus>("/business/phone/status"),
-  searchAvailablePhoneNumbers: (areaCode?: string) => {
+  searchAvailablePhoneNumbers: (prefix?: string) => {
     const qs = new URLSearchParams();
-    if (areaCode) qs.set("area_code", areaCode);
+    if (prefix) qs.set("prefix", prefix);
     const query = qs.toString();
     return request<PhoneSearchResult>(
       `/business/phone/available${query ? `?${query}` : ""}`,
@@ -282,6 +282,8 @@ export interface AvailablePhoneNumber {
 export interface PhoneSearchResult {
   numbers: AvailablePhoneNumber[];
   country: string;
+  prefix_label: string;   // e.g. "Area code" (US), "City / area" (GB), "STD area code" (AU)
+  prefix_example: string; // placeholder for the UI input
 }
 
 export interface PhoneProvisionResult {

@@ -2,14 +2,16 @@
 
 import logging
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi.errors import RateLimitExceeded
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api import appointments, auth, billing, business, calls, conversations, customers, dashboard, internal, jobs, onboarding, phone, public, receptionist, sms, voice
 from app.config import get_settings
 from app.core.logging_config import setup_logging
 from app.core.monitoring import check_database, init_sentry, sentry_active
+from app.core.rate_limit import _rate_limit_exceeded_handler, limiter
 from app.database import get_db
 
 settings = get_settings()
@@ -23,6 +25,10 @@ app = FastAPI(
     docs_url="/docs" if settings.debug else None,
     redoc_url="/redoc" if settings.debug else None,
 )
+
+# Rate limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,

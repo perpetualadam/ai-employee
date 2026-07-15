@@ -3,6 +3,38 @@
 from app.domain.telecom import get_dial_code, get_telecom_profile, normalize_country_code
 
 
+# Countries that use a trunk-prefix 0 in national dialling (dropped in E.164).
+# NANP (US, CA) has no trunk 0 — 10-digit local numbers need no stripping.
+_TRUNK_ZERO_COUNTRIES = frozenset(
+    {
+        "GB", "AU", "NZ",
+        # EU member states
+        "AT", "BE", "CZ", "DE", "DK", "ES", "FI", "FR", "GR", "HU",
+        "IE", "IT", "LT", "LU", "LV", "MT", "NL", "PL", "PT", "RO",
+        "SE", "SI", "SK",
+    }
+)
+
+
+def _strip_trunk_zero(digits: str, country_code: str, dial: str) -> str:
+    """
+    Remove the leading trunk-0 from a local national number before prepending
+    the international dial code.  Only applied to countries that actually use
+    a trunk 0 in local dialling; NANP (US/CA) is never touched.
+
+    Examples
+    --------
+    GB  07949046947  →  strip 0  →  7949046947  →  +447949046947
+    AU  0412345678   →  strip 0  →  412345678   →  +61412345678
+    DE  030 1234567  →  strip 0  →  30 1234567  →  +493012345678
+    """
+    if country_code not in _TRUNK_ZERO_COUNTRIES:
+        return digits
+    if digits.startswith("0") and not digits.startswith(dial):
+        return digits[1:]
+    return digits
+
+
 def normalize_phone(phone: str, country: str | None = "US") -> str:
     """Strip to E.164-style +digits using the business country when no + prefix."""
     cleaned = phone.strip()
@@ -22,9 +54,10 @@ def normalize_phone(phone: str, country: str | None = "US") -> str:
     if digits.startswith(dial) and len(digits) > len(dial):
         return f"+{digits}"
 
+    national = _strip_trunk_zero(digits, country_code, dial)
     profile = get_telecom_profile(country_code)
-    if profile.min_national_digits <= len(digits) <= profile.max_national_digits:
-        return f"+{dial}{digits}"
+    if profile.min_national_digits <= len(national) <= profile.max_national_digits:
+        return f"+{dial}{national}"
 
     return cleaned
 

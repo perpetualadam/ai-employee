@@ -1,7 +1,7 @@
 """Pydantic request/response schemas."""
 
 from datetime import date, datetime
-from typing import Any, Literal, Optional
+from typing import Any, Generic, Literal, Optional, TypeVar
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -14,6 +14,8 @@ from app.models.enums import (
     Industry,
     JobStatus,
 )
+
+T = TypeVar("T")
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -119,6 +121,8 @@ class PhoneProvisioningStatusResponse(BaseModel):
 class PhoneSearchResponse(BaseModel):
     numbers: list[AvailablePhoneNumber]
     country: str
+    prefix_label: str = "Area code"  # UI label for the optional prefix input
+    prefix_example: str = ""  # Placeholder shown in the UI text box
 
 
 class PhoneProvisionRequest(BaseModel):
@@ -505,3 +509,17 @@ class OnboardingStatus(BaseModel):
     completed_count: int
     total_steps: int
     progress_percent: int
+
+
+# ── Pagination ────────────────────────────────────────────────────────────────
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    """Generic paginated response wrapper."""
+
+    items: list[T]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    has_more: bool

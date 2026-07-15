@@ -19,12 +19,16 @@ class PhoneProvisioningService:
     @staticmethod
     def status(business: Business) -> dict:
         configured = telnyx_client.is_phone_provisioning_configured()
+        already_provisioned = bool(business.phone_provisioned)
         return {
             "phone_number": business.phone_number,
-            "provisioned": business.phone_provisioned,
+            "provisioned": already_provisioned,
             "platform_configured": configured,
-            "can_search": configured,
-            "manual_fallback_allowed": not business.phone_provisioned,
+            # A business that already has a provisioned number cannot provision
+            # another one (provision() raises 409), so showing the search form
+            # would be misleading.
+            "can_search": configured and not already_provisioned,
+            "manual_fallback_allowed": not already_provisioned,
             "country": business.country,
         }
 
@@ -32,7 +36,7 @@ class PhoneProvisioningService:
     def search_available(
         business: Business,
         *,
-        area_code: str | None = None,
+        prefix: str | None = None,
         limit: int = 10,
     ) -> list[dict]:
         if not telnyx_client.is_phone_provisioning_configured():
@@ -42,7 +46,7 @@ class PhoneProvisioningService:
             )
         return telnyx_client.search_available_phone_numbers(
             business.country,
-            area_code=area_code,
+            prefix=prefix,
             limit=limit,
         )
 

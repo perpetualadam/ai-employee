@@ -198,7 +198,7 @@ class TradeConversationIntegrationSpecification(unittest.TestCase):
 class SupportedCountriesSpecification(unittest.TestCase):
     def test_get_supported_countries_includes_major_markets(self) -> None:
         codes = {c["code"] for c in get_supported_countries()}
-        for expected in ("US", "GB", "AU", "DE", "JP"):
+        for expected in ("US", "GB", "AU", "DE"):
             self.assertIn(expected, codes)
 
     def test_country_entries_have_labels(self) -> None:

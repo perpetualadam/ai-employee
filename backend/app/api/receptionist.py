@@ -2,7 +2,7 @@
 
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.ai.receptionist_agent import (
@@ -12,6 +12,7 @@ from app.ai.receptionist_agent import (
 )
 from app.config import get_settings
 from app.core.deps import require_active_subscription
+from app.core.rate_limit import limiter
 from app.database import SessionLocal, get_db
 from app.models import Business, CallLog
 from app.schemas import ChatRequest, ChatResponse
@@ -30,7 +31,9 @@ async def _summarize_conversation(call_log_id: str) -> None:
 
 
 @router.post("/chat", response_model=ChatResponse)
+@limiter.limit("30/minute")
 async def chat_with_receptionist(
+    request: Request,
     data: ChatRequest,
     background_tasks: BackgroundTasks,
     business: Business = Depends(require_active_subscription),

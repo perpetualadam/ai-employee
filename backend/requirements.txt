@@ -32,3 +32,6 @@ stripe==11.4.1
 
 # Monitoring (optional — init skipped when SENTRY_DSN unset)
 sentry-sdk[fastapi]==2.19.2
+
+# Rate limiting
+slowapi==0.1.9

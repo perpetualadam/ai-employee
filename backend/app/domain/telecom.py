@@ -45,9 +45,7 @@ COUNTRY_DIAL_CODES: dict[str, str] = {
     "AU": "61",
     "GB": "44",
     "NZ": "64",
-    "JP": "81",
-    "CN": "86",
-    "RU": "7",
+
     "DE": "49",
     "FR": "33",
     "IT": "39",
@@ -88,19 +86,119 @@ ADDRESS_FORMAT_HINTS: dict[str, str] = {
     "EU": (
         "European service address: street and number, city, postal code, and country."
     ),
-    "JP": (
-        "Japanese service address: prefecture, city/ward, street/block, and building "
-        "number if applicable."
+
+}
+
+
+@dataclass(frozen=True)
+class NumberSearchProfile:
+    """
+    How to search for purchasable numbers in a country.
+
+    Attributes
+    ----------
+    prefix_param:
+        The Telnyx API filter key used to narrow the search to a local area/region.
+        ``None`` means the country doesn't support prefix filtering via Telnyx.
+    prefix_label:
+        Human-readable label shown in the UI (e.g. "Area code", "NDC", "STD prefix").
+    prefix_digits:
+        Tuple of acceptable digit lengths for the prefix.  Empty means any length
+        passes (no client-side validation).
+    prefix_example:
+        Example prefix string shown as placeholder in the UI.
+    """
+
+    prefix_param: str | None  # Telnyx query param name, or None if not supported
+    prefix_label: str
+    prefix_digits: tuple[int, ...]  # valid digit counts; () = unchecked
+    prefix_example: str
+
+
+# Maps each region/country code to number-search parameters.
+# Keys must match keys used in TELECOM_PROFILES or normalised 2-letter country codes.
+NUMBER_SEARCH_PROFILES: dict[str, NumberSearchProfile] = {
+    # US / Canada — 3-digit area code, Telnyx NDC filter.
+    "US": NumberSearchProfile(
+        prefix_param="filter[national_destination_code]",
+        prefix_label="Area code",
+        prefix_digits=(3,),
+        prefix_example="415",
     ),
-    "CN": (
-        "Chinese service address: province, city, district, street, and building/unit "
-        "details."
+    "CA": NumberSearchProfile(
+        prefix_param="filter[national_destination_code]",
+        prefix_label="Area code",
+        prefix_digits=(3,),
+        prefix_example="416",
     ),
-    "RU": (
-        "Russian service address: city, street, building number, and apartment if "
-        "applicable."
+    # UK — Telnyx uses locality filter for GB numbers.
+    "GB": NumberSearchProfile(
+        prefix_param="filter[locality]",
+        prefix_label="City / area",
+        prefix_digits=(),  # free text
+        prefix_example="London",
+    ),
+    # Australia — 2-digit STD area code.
+    "AU": NumberSearchProfile(
+        prefix_param="filter[national_destination_code]",
+        prefix_label="STD area code",
+        prefix_digits=(2,),
+        prefix_example="02",
+    ),
+    # New Zealand — no stable NDC filter; country-level search only.
+    "NZ": NumberSearchProfile(
+        prefix_param=None,
+        prefix_label="Area code",
+        prefix_digits=(2, 3),
+        prefix_example="09",
+    ),
+    # EU (catch-all for member states without dedicated profile).
+    "EU": NumberSearchProfile(
+        prefix_param="filter[national_destination_code]",
+        prefix_label="Area / NDC",
+        prefix_digits=(),
+        prefix_example="",
+    ),
+    # Germany — Telnyx NDC.
+    "DE": NumberSearchProfile(
+        prefix_param="filter[national_destination_code]",
+        prefix_label="Area code (Vorwahl)",
+        prefix_digits=(2, 3, 4, 5),
+        prefix_example="30",
+    ),
+    # France.
+    "FR": NumberSearchProfile(
+        prefix_param="filter[national_destination_code]",
+        prefix_label="Area code",
+        prefix_digits=(1,),
+        prefix_example="1",
+    ),
+
+    # Ireland.
+    "IE": NumberSearchProfile(
+        prefix_param="filter[national_destination_code]",
+        prefix_label="Area code",
+        prefix_digits=(1, 2),
+        prefix_example="1",
     ),
 }
+
+
+def get_number_search_profile(country: str | None) -> NumberSearchProfile:
+    """
+    Return the number-search profile for a country.
+
+    Resolution order:
+      1. Exact 2-letter code (e.g. ``GB``, ``DE``).
+      2. EU catch-all for member states not listed above.
+      3. US fallback.
+    """
+    code = normalize_country_code(country)
+    if code in NUMBER_SEARCH_PROFILES:
+        return NUMBER_SEARCH_PROFILES[code]
+    if code in EU_MEMBER_CODES:
+        return NUMBER_SEARCH_PROFILES["EU"]
+    return NUMBER_SEARCH_PROFILES["US"]
 
 
 @dataclass(frozen=True)
@@ -152,30 +250,7 @@ TELECOM_PROFILES: dict[str, TelecomProfile] = {
         max_national_digits=12,
         sms_regulatory_note="Use a local sender ID or number where required by member state.",
     ),
-    "JP": TelecomProfile(
-        region_code="JP",
-        recommended_voice_providers=("telnyx", "twilio"),
-        recommended_sms_providers=("twilio", "telnyx"),
-        min_national_digits=10,
-        max_national_digits=11,
-        sms_regulatory_note="Alphanumeric sender IDs may be restricted; local numbers preferred.",
-    ),
-    "CN": TelecomProfile(
-        region_code="CN",
-        recommended_voice_providers=("twilio", "telnyx"),
-        recommended_sms_providers=("aliyun", "twilio"),
-        min_national_digits=11,
-        max_national_digits=11,
-        sms_regulatory_note="SMS typically requires a China-local sender and provider registration.",
-    ),
-    "RU": TelecomProfile(
-        region_code="RU",
-        recommended_voice_providers=("telnyx", "twilio"),
-        recommended_sms_providers=("twilio", "telnyx"),
-        min_national_digits=10,
-        max_national_digits=10,
-        sms_regulatory_note="Check local carrier and sender-ID rules for outbound SMS.",
-    ),
+
 }
 
 
@@ -259,9 +334,7 @@ _COUNTRY_LABELS: dict[str, str] = {
     "GB": "United Kingdom",
     "AU": "Australia",
     "NZ": "New Zealand",
-    "JP": "Japan",
-    "CN": "China",
-    "RU": "Russia",
+
     "DE": "Germany",
     "FR": "France",
     "IT": "Italy",
@@ -283,8 +356,14 @@ _COUNTRY_LABELS: dict[str, str] = {
 
 
 def get_supported_countries() -> list[dict[str, str]]:
-    """Countries with telecom/address profiles — for onboarding UI."""
-    codes = sorted(set(COUNTRY_DIAL_CODES) | set(ADDRESS_FORMAT_HINTS))
+    """Countries with telecom/address profiles — for onboarding UI.
+
+    Returns only real 2-letter ISO country codes.  Internal region tokens such
+    as ``EU`` (used as a catch-all profile key) are excluded.
+    """
+    # COUNTRY_DIAL_CODES only has real ISO codes; ADDRESS_FORMAT_HINTS contains
+    # the pseudo-key "EU" which must not appear in the onboarding dropdown.
+    codes = sorted(set(COUNTRY_DIAL_CODES) | (set(ADDRESS_FORMAT_HINTS) - {"EU"}))
     return [
         {"code": code, "label": _COUNTRY_LABELS.get(code, code)}
         for code in codes

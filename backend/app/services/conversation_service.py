@@ -35,6 +35,21 @@ class ConversationService:
         return [ConversationService._to_list_item(db, row) for row in rows]
 
     @staticmethod
+    def list_conversations_paginated(
+        db: Session,
+        business_id: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[ConversationListItem], int]:
+        """Return paginated conversations and total count."""
+        query = db.query(CallLog).filter(CallLog.business_id == business_id)
+        total = query.count()
+        rows = query.order_by(CallLog.created_at.desc()).offset(offset).limit(limit).all()
+        items = [ConversationService._to_list_item(db, row) for row in rows]
+        return items, total
+
+    @staticmethod
     def get_conversation(
         db: Session,
         business_id: str,

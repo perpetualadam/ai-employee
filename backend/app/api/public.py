@@ -2,9 +2,10 @@
 
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from app.core.rate_limit import limiter
 from app.database import SessionLocal, get_db
 from app.models import Business
 from app.schemas import (
@@ -43,7 +44,9 @@ def get_public_chat_info(slug: str, db: Session = Depends(get_db)) -> PublicChat
 
 
 @router.post("/chat/{slug}", response_model=PublicChatResponse)
+@limiter.limit("20/minute")
 async def public_chat_by_slug(
+    request: Request,
     slug: str,
     data: PublicChatRequest,
     background_tasks: BackgroundTasks,
@@ -80,7 +83,9 @@ def get_continue_chat_info(token: str, db: Session = Depends(get_db)) -> PublicC
 
 
 @router.post("/continue/{token}", response_model=PublicChatResponse)
+@limiter.limit("20/minute")
 async def public_chat_continue(
+    request: Request,
     token: str,
     data: PublicChatRequest,
     background_tasks: BackgroundTasks,

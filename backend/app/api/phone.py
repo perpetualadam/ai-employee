@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import get_user_primary_business
 from app.database import get_db
+from app.domain.telecom import get_number_search_profile
 from app.models import Business
 from app.schemas import (
     PhoneProvisionRequest,
@@ -26,16 +27,26 @@ def phone_status(
 
 @router.get("/available", response_model=PhoneSearchResponse)
 def search_phone_numbers(
-    area_code: str | None = Query(default=None, max_length=10),
+    prefix: str | None = Query(
+        default=None,
+        max_length=20,
+        description="Optional prefix to narrow the search (area code, NDC, city name, etc.)",
+    ),
     limit: int = Query(default=10, ge=1, le=25),
     business: Business = Depends(get_user_primary_business),
 ) -> PhoneSearchResponse:
     numbers = PhoneProvisioningService.search_available(
         business,
-        area_code=area_code,
+        prefix=prefix,
         limit=limit,
     )
-    return PhoneSearchResponse(country=business.country, numbers=numbers)
+    profile = get_number_search_profile(business.country)
+    return PhoneSearchResponse(
+        country=business.country,
+        numbers=numbers,
+        prefix_label=profile.prefix_label,
+        prefix_example=profile.prefix_example,
+    )
 
 
 @router.post("/provision", response_model=PhoneProvisionResponse)

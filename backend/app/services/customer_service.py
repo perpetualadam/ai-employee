@@ -25,6 +25,27 @@ class CustomerService:
         return query.order_by(Customer.created_at.desc()).all()
 
     @staticmethod
+    def list_customers_paginated(
+        db: Session,
+        business_id: str,
+        search: str | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> tuple[list[Customer], int]:
+        """Return paginated customers and total count."""
+        query = db.query(Customer).filter(Customer.business_id == business_id)
+        if search:
+            term = f"%{search.strip()}%"
+            query = query.filter(
+                (Customer.name.ilike(term))
+                | (Customer.phone.ilike(term))
+                | (Customer.email.ilike(term))
+            )
+        total = query.count()
+        customers = query.order_by(Customer.created_at.desc()).offset(offset).limit(limit).all()
+        return customers, total
+
+    @staticmethod
     def get_customer(db: Session, business_id: str, customer_id: str) -> Customer | None:
         return (
             db.query(Customer)
