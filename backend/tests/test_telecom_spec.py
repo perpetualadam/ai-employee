@@ -9,10 +9,13 @@ from app.domain.phone import is_plausible_phone, normalize_phone
 from app.domain.telecom import (
     EU_MEMBER_CODES,
     get_address_format_hint,
+    get_country_defaults,
     get_dial_code,
+    get_example_phone_number,
     get_number_search_profile,
     get_telecom_profile,
     resolve_region_code,
+    resolve_voice_locale,
 )
 
 
@@ -36,6 +39,23 @@ class TelecomProfileSpecification(unittest.TestCase):
         gb_hint = get_address_format_hint("GB")
         self.assertNotEqual(us_hint, gb_hint)
         self.assertIn("postcode", gb_hint.lower())
+
+    def test_canada_has_dedicated_telecom_profile(self) -> None:
+        self.assertEqual(resolve_region_code("CA"), "CA")
+        self.assertEqual(get_telecom_profile("CA").region_code, "CA")
+
+    def test_country_defaults_for_uk(self) -> None:
+        defaults = get_country_defaults("GB")
+        self.assertEqual(defaults.timezone, "Europe/London")
+        self.assertEqual(defaults.currency, "GBP")
+
+    def test_voice_locale_for_uk(self) -> None:
+        locale = resolve_voice_locale("GB")
+        self.assertEqual(locale.language, "en-GB")
+        self.assertEqual(locale.voice, "Polly.Amy")
+
+    def test_example_phone_for_uk(self) -> None:
+        self.assertTrue(get_example_phone_number("GB").startswith("+44"))
 
 
 class CountryPhoneNormalizationSpecification(unittest.TestCase):

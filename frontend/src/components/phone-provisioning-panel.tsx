@@ -29,6 +29,8 @@ export function PhoneProvisioningPanel({
   const [prefix, setPrefix] = useState("");
   const [prefixLabel, setPrefixLabel] = useState("Area code");
   const [prefixExample, setPrefixExample] = useState("");
+  const [prefixSupported, setPrefixSupported] = useState(true);
+  const [examplePhone, setExamplePhone] = useState("+15551234567");
   const [results, setResults] = useState<AvailablePhoneNumber[]>([]);
   const [manualPhone, setManualPhone] = useState(business?.phone_number ?? "");
   const [loadingStatus, setLoadingStatus] = useState(true);
@@ -47,6 +49,10 @@ export function PhoneProvisioningPanel({
       if (next.phone_number) {
         setManualPhone(next.phone_number);
       }
+      if (next.prefix_label) setPrefixLabel(next.prefix_label);
+      if (next.prefix_example !== undefined) setPrefixExample(next.prefix_example);
+      if (next.prefix_supported !== undefined) setPrefixSupported(next.prefix_supported);
+      if (next.example_phone) setExamplePhone(next.example_phone);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not load phone status");
     } finally {
@@ -69,6 +75,7 @@ export function PhoneProvisioningPanel({
       // Update prefix UI hints from what the API returned for this country
       if (data.prefix_label) setPrefixLabel(data.prefix_label);
       if (data.prefix_example !== undefined) setPrefixExample(data.prefix_example);
+      if (data.prefix_supported !== undefined) setPrefixSupported(data.prefix_supported);
       if (data.numbers.length === 0) {
         setError(`No numbers found — try a different ${data.prefix_label.toLowerCase()}.`);
       }
@@ -141,15 +148,21 @@ export function PhoneProvisioningPanel({
             and assign it to your AI receptionist — no Telnyx dashboard required.
           </p>
           <div className="flex flex-wrap gap-2">
-            <div className="flex-1 min-w-[140px] space-y-1">
-              <Label htmlFor="prefix">{prefixLabel} (optional)</Label>
-              <Input
-                id="prefix"
-                value={prefix}
-                onChange={(e) => setPrefix(e.target.value.slice(0, 20))}
-                placeholder={prefixExample || prefixLabel}
-              />
-            </div>
+            {prefixSupported ? (
+              <div className="flex-1 min-w-[140px] space-y-1">
+                <Label htmlFor="prefix">{prefixLabel} (optional)</Label>
+                <Input
+                  id="prefix"
+                  value={prefix}
+                  onChange={(e) => setPrefix(e.target.value.slice(0, 20))}
+                  placeholder={prefixExample || prefixLabel}
+                />
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground flex-1">
+                Numbers are searched country-wide for {status.country} — no area filter needed.
+              </p>
+            )}
             <div className="flex items-end">
               <Button type="button" variant="secondary" onClick={handleSearch} disabled={searching}>
                 {searching ? "Searching…" : "Search numbers"}
@@ -200,7 +213,7 @@ export function PhoneProvisioningPanel({
             id="manual-phone"
             value={manualPhone}
             onChange={(e) => setManualPhone(e.target.value)}
-            placeholder="+15551234567"
+            placeholder={examplePhone}
           />
           <Button
             type="button"

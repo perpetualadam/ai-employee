@@ -149,8 +149,8 @@ NUMBER_SEARCH_PROFILES: dict[str, NumberSearchProfile] = {
     "NZ": NumberSearchProfile(
         prefix_param=None,
         prefix_label="Area code",
-        prefix_digits=(2, 3),
-        prefix_example="09",
+        prefix_digits=(),
+        prefix_example="",
     ),
     # EU (catch-all for member states without dedicated profile).
     "EU": NumberSearchProfile(
@@ -213,9 +213,67 @@ class TelecomProfile:
     sms_regulatory_note: str = ""
 
 
+@dataclass(frozen=True)
+class VoiceLocale:
+    """TTS/STT language and Polly voice for a country."""
+
+    language: str
+    voice: str
+
+
+@dataclass(frozen=True)
+class CountryDefaults:
+    timezone: str
+    currency: str
+
+
+COUNTRY_DEFAULTS: dict[str, CountryDefaults] = {
+    "US": CountryDefaults("America/New_York", "USD"),
+    "CA": CountryDefaults("America/Toronto", "CAD"),
+    "GB": CountryDefaults("Europe/London", "GBP"),
+    "AU": CountryDefaults("Australia/Sydney", "AUD"),
+    "NZ": CountryDefaults("Pacific/Auckland", "NZD"),
+    "IE": CountryDefaults("Europe/Dublin", "EUR"),
+    "DE": CountryDefaults("Europe/Berlin", "EUR"),
+    "FR": CountryDefaults("Europe/Paris", "EUR"),
+    "IT": CountryDefaults("Europe/Rome", "EUR"),
+    "ES": CountryDefaults("Europe/Madrid", "EUR"),
+    "NL": CountryDefaults("Europe/Amsterdam", "EUR"),
+    "BE": CountryDefaults("Europe/Brussels", "EUR"),
+    "AT": CountryDefaults("Europe/Vienna", "EUR"),
+    "PT": CountryDefaults("Europe/Lisbon", "EUR"),
+    "SE": CountryDefaults("Europe/Stockholm", "EUR"),
+    "DK": CountryDefaults("Europe/Copenhagen", "EUR"),
+    "FI": CountryDefaults("Europe/Helsinki", "EUR"),
+    "PL": CountryDefaults("Europe/Warsaw", "EUR"),
+    "CZ": CountryDefaults("Europe/Prague", "EUR"),
+    "RO": CountryDefaults("Europe/Bucharest", "EUR"),
+    "HU": CountryDefaults("Europe/Budapest", "EUR"),
+    "GR": CountryDefaults("Europe/Athens", "EUR"),
+}
+
+EXAMPLE_PHONE_NUMBERS: dict[str, str] = {
+    "US": "+15551234567",
+    "CA": "+14165551234",
+    "GB": "+447949012345",
+    "AU": "+61412345678",
+    "NZ": "+6491234567",
+    "IE": "+353871234567",
+    "DE": "+493012345678",
+    "FR": "+33612345678",
+}
+
+
 TELECOM_PROFILES: dict[str, TelecomProfile] = {
     "US": TelecomProfile(
         region_code="US",
+        recommended_voice_providers=("telnyx", "twilio"),
+        recommended_sms_providers=("telnyx", "twilio"),
+        min_national_digits=10,
+        max_national_digits=10,
+    ),
+    "CA": TelecomProfile(
+        region_code="CA",
         recommended_voice_providers=("telnyx", "twilio"),
         recommended_sms_providers=("telnyx", "twilio"),
         min_national_digits=10,
@@ -355,6 +413,36 @@ _COUNTRY_LABELS: dict[str, str] = {
 }
 
 
+def get_country_defaults(country: str | None) -> CountryDefaults:
+    """Default timezone and currency when a country is selected at onboarding."""
+    code = normalize_country_code(country)
+    if code in COUNTRY_DEFAULTS:
+        return COUNTRY_DEFAULTS[code]
+    if code in EU_MEMBER_CODES:
+        return CountryDefaults("Europe/London", "EUR")
+    return COUNTRY_DEFAULTS["US"]
+
+
+def get_example_phone_number(country: str | None) -> str:
+    """Placeholder phone number for UI inputs, matched to the business country."""
+    code = normalize_country_code(country)
+    return EXAMPLE_PHONE_NUMBERS.get(code, EXAMPLE_PHONE_NUMBERS["US"])
+
+
+def resolve_voice_locale(country: str | None) -> VoiceLocale:
+    """Map business country to TTS voice and STT language."""
+    code = normalize_country_code(country)
+    if code in ("US", "CA"):
+        return VoiceLocale("en-US", "Polly.Joanna")
+    if code in ("GB", "IE"):
+        return VoiceLocale("en-GB", "Polly.Amy")
+    if code in ("AU", "NZ"):
+        return VoiceLocale("en-AU", "Polly.Olivia")
+    if code in EU_MEMBER_CODES:
+        return VoiceLocale("en-GB", "Polly.Amy")
+    return VoiceLocale("en-US", "Polly.Joanna")
+
+
 def get_supported_countries() -> list[dict[str, str]]:
     """Countries with telecom/address profiles — for onboarding UI.
 
@@ -365,6 +453,11 @@ def get_supported_countries() -> list[dict[str, str]]:
     # the pseudo-key "EU" which must not appear in the onboarding dropdown.
     codes = sorted(set(COUNTRY_DIAL_CODES) | (set(ADDRESS_FORMAT_HINTS) - {"EU"}))
     return [
-        {"code": code, "label": _COUNTRY_LABELS.get(code, code)}
+        {
+            "code": code,
+            "label": _COUNTRY_LABELS.get(code, code),
+            "timezone": get_country_defaults(code).timezone,
+            "currency": get_country_defaults(code).currency,
+        }
         for code in codes
     ]

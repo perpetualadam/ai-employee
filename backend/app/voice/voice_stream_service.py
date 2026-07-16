@@ -12,6 +12,8 @@ from fastapi import WebSocket
 
 from app.config import get_settings
 from app.database import SessionLocal
+from app.domain.telecom import resolve_voice_locale
+from app.models import Business, CallLog
 from app.services.voice_mode_service import VoiceModeService
 from app.voice import telnyx_client
 from app.voice.gather_handler import handle_gather_result
@@ -37,14 +39,27 @@ async def _audio_from_telnyx(websocket: WebSocket) -> AsyncIterator[bytes]:
             break
 
 
-async def _collect_final_transcript(audio_stream: AsyncIterator[bytes], api_key: str) -> str:
+async def _collect_final_transcript(
+    audio_stream: AsyncIterator[bytes],
+    api_key: str,
+    *,
+    language: str = "en-US",
+) -> str:
     """Run Deepgram live STT and return the last final transcript segment."""
-    stt = DeepgramSTT(api_key)
+    stt = DeepgramSTT(api_key, language=language)
     final_parts: list[str] = []
     async for chunk in stt.transcribe_stream(audio_stream):
         if chunk.is_final and chunk.text.strip():
             final_parts.append(chunk.text.strip())
     return " ".join(final_parts).strip()
+
+
+def _voice_country_for_call(db, call_log_id: str) -> str | None:
+    call_log = db.query(CallLog).filter(CallLog.id == call_log_id).first()
+    if call_log is None:
+        return None
+    business = db.query(Business).filter(Business.id == call_log.business_id).first()
+    return business.country if business else None
 
 
 async def process_telnyx_media_stream(
@@ -69,9 +84,20 @@ async def process_telnyx_media_stream(
         await websocket.close(code=1008, reason="Missing call_sid")
         return
 
+    db = SessionLocal()
+    try:
+        country = _voice_country_for_call(db, call_log_id)
+        language = resolve_voice_locale(country).language
+    finally:
+        db.close()
+
     try:
         transcript = await asyncio.wait_for(
-            _collect_final_transcript(_audio_from_telnyx(websocket), settings.deepgram_api_key),
+            _collect_final_transcript(
+                _audio_from_telnyx(websocket),
+                settings.deepgram_api_key,
+                language=language,
+            ),
             timeout=STREAM_LISTEN_SECONDS,
         )
     except TimeoutError:
@@ -96,6 +122,7 @@ async def process_telnyx_media_stream(
                 settings.public_api_url,
                 call_log_id,
                 call_sid=call_sid,
+                country=country,
             )
         telnyx_client.update_call_texml(call_sid, texml)
         logger.info(
@@ -110,6 +137,7 @@ async def process_telnyx_media_stream(
                 settings.public_api_url,
                 call_log_id,
                 call_sid=call_sid,
+                country=country,
             )
             telnyx_client.update_call_texml(call_sid, fallback)
         except Exception:

@@ -46,7 +46,7 @@ class SmsService:
         if not text:
             return
 
-        caller = normalize_phone(from_number)
+        caller = normalize_phone(from_number, business.country)
         call_log = SmsService._find_active_session(db, business.id, caller)
 
         if call_log is None:

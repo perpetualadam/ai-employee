@@ -205,6 +205,25 @@ class SupportedCountriesSpecification(unittest.TestCase):
         for entry in get_supported_countries():
             self.assertTrue(entry["code"])
             self.assertTrue(entry["label"])
+            self.assertTrue(entry.get("timezone"))
+            self.assertTrue(entry.get("currency"))
+
+    def test_plumbing_prompt_includes_trade_intake_questions(self) -> None:
+        business = sample_business(industry=Industry.PLUMBING, country="US")
+        prompt = build_receptionist_prompt(business, [], [], voice_mode=False)
+        self.assertIn("Trade intake follow-ups", prompt)
+        self.assertIn("shut-off valve", prompt.lower())
+
+    def test_plumbing_us_compliance_in_prompt(self) -> None:
+        business = sample_business(industry=Industry.PLUMBING, country="US")
+        prompt = build_receptionist_prompt(business, [], [], voice_mode=False)
+        self.assertIn("burst pipes", prompt.lower())
+
+    def test_gb_voice_greeting_uses_en_gb_voice(self) -> None:
+        business = sample_business(industry=Industry.GAS_ENGINEER, country="GB", name="Heat Co")
+        texml = build_greeting(business, "http://localhost:8000", "call-1")
+        self.assertIn("en-GB", texml)
+        self.assertIn("Polly.Amy", texml)
 
 
 if __name__ == "__main__":

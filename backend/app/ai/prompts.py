@@ -155,6 +155,16 @@ def build_receptionist_prompt(
     if trade.compliance_notes:
         compliance_block = f"\n## Regulatory compliance ({trade.region})\n- {trade.compliance_notes}\n"
 
+    intake_block = ""
+    if trade.intake_questions:
+        intake_lines = "\n".join(f"- {q}" for q in trade.intake_questions)
+        intake_block = (
+            f"\n## Trade intake follow-ups ({trade.label})\n"
+            "After hearing the problem, ask ONE relevant follow-up below before collecting their name. "
+            "Skip questions that do not apply.\n"
+            f"{intake_lines}\n"
+        )
+
     if voice_mode:
         voice_rules = """
 ## Phone call rules — critical
@@ -209,7 +219,7 @@ Your job is to act like a professional, friendly receptionist — not a generic 
 
 ## Current date and time (use these — never guess dates)
 {date_context}
-{compliance_block}
+{compliance_block}{intake_block}
 {workflow}
 {caller_context}
 ## Hard rules — never break these

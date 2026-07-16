@@ -3,11 +3,17 @@
 from html import escape
 from urllib.parse import urlencode
 
+from app.domain.telecom import resolve_voice_locale
 from app.models import Business
 from app.config import get_settings
 
-VOICE = "Polly.Joanna"
-LANGUAGE = "en-US"
+DEFAULT_VOICE = "Polly.Joanna"
+DEFAULT_LANGUAGE = "en-US"
+
+
+def _voice_for_country(country: str | None) -> tuple[str, str]:
+    locale = resolve_voice_locale(country)
+    return locale.voice, locale.language
 
 
 def _voice_urls(base_url: str, call_log_id: str) -> dict[str, str]:
@@ -30,9 +36,10 @@ def public_ws_url(path: str) -> str:
     return base + path
 
 
-def _say(message: str) -> str:
+def _say(message: str, country: str | None = None) -> str:
+    voice, language = _voice_for_country(country)
     text = escape(message, quote=False)
-    return f'<Say voice="{VOICE}" language="{LANGUAGE}">{text}</Say>'
+    return f'<Say voice="{voice}" language="{language}">{text}</Say>'
 
 
 def build_say_and_stream(
@@ -42,6 +49,7 @@ def build_say_and_stream(
     call_sid: str,
     *,
     include_beep: bool = True,
+    country: str | None = None,
 ) -> str:
     """Speak, beep, then stream inbound audio to Deepgram via WebSocket."""
     urls = _voice_urls(base_url, call_log_id)
@@ -53,16 +61,17 @@ def build_say_and_stream(
         beep = f'<Play loop="1">{beep_url}</Play>'
 
     settings = get_settings()
+    voice, language = _voice_for_country(country)
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
         "<Response>"
-        f"{_say(message)}"
+        f"{_say(message, country)}"
         f"{beep}"
         "<Start>"
         f'<Stream url="{stream_url}" track="inbound_track" codec="PCMU" />'
         "</Start>"
         f'<Pause length="{settings.voice_gather_timeout + 25}"/>'
-        f"{_say('Sorry, I did not hear anything. Goodbye!')}"
+        f"{_say('Sorry, I did not hear anything. Goodbye!', country)}"
         "<Hangup/>"
         "</Response>"
     )
@@ -75,6 +84,7 @@ def build_say_and_gather(
     *,
     include_beep: bool = True,
     call_sid: str | None = None,
+    country: str | None = None,
 ) -> str:
     """
     Speak the message, play a short beep, then listen for speech.
@@ -90,6 +100,7 @@ def build_say_and_gather(
                 call_log_id,
                 call_sid,
                 include_beep=include_beep,
+                country=country,
             )
 
     urls = _voice_urls(base_url, call_log_id)
@@ -100,15 +111,16 @@ def build_say_and_gather(
         beep_url = escape(urls["beep"], quote=True)
         beep = f'<Play loop="1">{beep_url}</Play>'
 
-    no_input = _say("I didn't catch that. Goodbye!")
+    _, language = _voice_for_country(country)
+    no_input = _say("I didn't catch that. Goodbye!", country)
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
         "<Response>"
-        f"{_say(message)}"
+        f"{_say(message, country)}"
         f"{beep}"
         f'<Gather input="speech dtmf" action="{gather_url}" method="GET" '
         f'timeout="{settings.voice_gather_timeout}" '
-        f'speechTimeout="{settings.voice_gather_speech_timeout}" language="{LANGUAGE}">'
+        f'speechTimeout="{settings.voice_gather_speech_timeout}" language="{language}">'
         "</Gather>"
         f"{no_input}"
         "<Hangup/>"
@@ -125,27 +137,27 @@ def build_greeting(business: Business, base_url: str, call_log_id: str, *, call_
         "I'm the AI receptionist. "
         f"After the tone, tell me what's going on — for example {trade.voice_greeting_example}."
     )
-    return build_say_and_gather(greeting, base_url, call_log_id, call_sid=call_sid)
+    return build_say_and_gather(greeting, base_url, call_log_id, call_sid=call_sid, country=business.country)
 
 
-def build_transfer_texml(escalation_phone: str, message: str | None = None) -> str:
+def build_transfer_texml(escalation_phone: str, message: str | None = None, *, country: str | None = None) -> str:
     msg = message or "Please hold while I connect you with a team member."
     phone = escape(escalation_phone.strip(), quote=False)
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
         "<Response>"
-        f"{_say(msg)}"
+        f"{_say(msg, country)}"
         f'<Dial timeout="30"><Number>{phone}</Number></Dial>'
-        f"{_say('Sorry, no one is available right now. We will call you back shortly.')}"
+        f"{_say('Sorry, no one is available right now. We will call you back shortly.', country)}"
         "<Hangup/>"
         "</Response>"
     )
 
 
-def build_hangup(message: str) -> str:
+def build_hangup(message: str, *, country: str | None = None) -> str:
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
-        f"<Response>{_say(message)}<Hangup/></Response>"
+        f"<Response>{_say(message, country)}<Hangup/></Response>"
     )
 
 
@@ -158,22 +170,23 @@ def build_outbound_answer_texml(
     escalation_phone: str | None,
     *,
     reason: str | None = None,
+    country: str | None = None,
 ) -> str:
     """When customer answers an outbound callback, greet and connect to the owner."""
     intro = reason or f"Hi, this is {business_name} calling about your recent service request."
     parts = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         "<Response>",
-        _say(intro),
+        _say(intro, country),
     ]
     if escalation_phone:
         phone = escape(escalation_phone.strip(), quote=False)
-        parts.append(_say("Connecting you now."))
+        parts.append(_say("Connecting you now.", country))
         parts.append(f'<Dial timeout="30"><Number>{phone}</Number></Dial>')
-        parts.append(_say("Sorry, we could not connect you. We will try again soon."))
+        parts.append(_say("Sorry, we could not connect you. We will try again soon.", country))
     else:
         parts.append(
-            _say("Please call us back at your convenience. Thank you.")
+            _say("Please call us back at your convenience. Thank you.", country)
         )
     parts.append("<Hangup/>")
     parts.append("</Response>")

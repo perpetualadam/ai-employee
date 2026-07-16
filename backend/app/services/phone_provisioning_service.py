@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.domain.phone import is_plausible_phone, normalize_phone
+from app.domain.telecom import get_example_phone_number, get_number_search_profile
 from app.models import Business
 from app.voice import telnyx_client
 
@@ -20,6 +21,7 @@ class PhoneProvisioningService:
     def status(business: Business) -> dict:
         configured = telnyx_client.is_phone_provisioning_configured()
         already_provisioned = bool(business.phone_provisioned)
+        profile = get_number_search_profile(business.country)
         return {
             "phone_number": business.phone_number,
             "provisioned": already_provisioned,
@@ -30,6 +32,10 @@ class PhoneProvisioningService:
             "can_search": configured and not already_provisioned,
             "manual_fallback_allowed": not already_provisioned,
             "country": business.country,
+            "prefix_label": profile.prefix_label,
+            "prefix_example": profile.prefix_example,
+            "prefix_supported": profile.prefix_param is not None,
+            "example_phone": get_example_phone_number(business.country),
         }
 
     @staticmethod
@@ -64,7 +70,7 @@ class PhoneProvisioningService:
             .all()
         )
         for other in existing:
-            if other.phone_number and normalize_phone(other.phone_number, country) == normalized:
+            if other.phone_number and normalize_phone(other.phone_number, other.country) == normalized:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="That phone number is already assigned to another business.",

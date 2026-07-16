@@ -62,6 +62,26 @@ class PhoneProvisioningSpecification(unittest.TestCase):
         self.assertEqual(business.telnyx_phone_number_id, "pn-123")
         mock_configure.assert_called_once()
 
+    def test_duplicate_check_normalizes_with_each_business_country(self) -> None:
+        from fastapi import HTTPException
+
+        db = MagicMock()
+        other = MagicMock()
+        other.id = "biz-other"
+        other.country = "GB"
+        other.phone_number = "07949046947"
+
+        db.query.return_value.filter.return_value.all.return_value = [other]
+
+        with self.assertRaises(HTTPException) as ctx:
+            PhoneProvisioningService._assert_number_available(
+                db,
+                "+447949046947",
+                "biz-new",
+                "GB",
+            )
+        self.assertEqual(ctx.exception.status_code, 409)
+
 
 if __name__ == "__main__":
     unittest.main()

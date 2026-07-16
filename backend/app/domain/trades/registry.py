@@ -37,6 +37,7 @@ class TradeContext:
         "sample_service_name",
         "compliance_notes",
         "address_hint",
+        "intake_questions",
     )
 
     def __init__(self, template: TradeTemplate, business: Business) -> None:
@@ -59,6 +60,7 @@ class TradeContext:
         self.sample_service_name = template.sample_service_name
         self.compliance_notes = get_compliance_notes(template.industry, region)
         self.address_hint = get_address_format_hint(business.country)
+        self.intake_questions = template.intake_questions
 
 
 _UNIVERSAL_EMERGENCY_KEYWORDS = frozenset(

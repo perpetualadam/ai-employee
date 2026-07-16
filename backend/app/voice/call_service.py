@@ -31,7 +31,7 @@ def find_business_by_phone(db: Session, to_number: str) -> Business | None:
         return None
 
     for biz in db.query(Business).filter(Business.phone_number.isnot(None)).all():
-        if biz.phone_number and normalize_phone(biz.phone_number) == normalized:
+        if biz.phone_number and normalize_phone(biz.phone_number, biz.country) == normalized:
             return biz
 
     # Single-tenant dev fallback: env Telnyx number maps to the only business.
@@ -94,11 +94,15 @@ async def process_speech_turn(
     Returns (texml_response, escalated).
     """
     settings = get_settings()
+    country = business.country
     history: list[dict[str, str]] = list(call_log.conversation_history or [])
 
     if not settings.groq_api_key:
         return (
-            build_hangup("Sorry, our AI receptionist is temporarily unavailable. Please call back later."),
+            build_hangup(
+                "Sorry, our AI receptionist is temporarily unavailable. Please call back later.",
+                country=country,
+            ),
             False,
         )
 
@@ -108,14 +112,14 @@ async def process_speech_turn(
         call_log.status = CallStatus.COMPLETED
         db.commit()
         return (
-            build_hangup("You're welcome! Thank you for calling. Goodbye!"),
+            build_hangup("You're welcome! Thank you for calling. Goodbye!", country=country),
             False,
         )
 
     if is_farewell(speech_text):
         call_log.status = CallStatus.COMPLETED
         db.commit()
-        return (build_hangup("Thank you for calling. Goodbye!"), False)
+        return (build_hangup("Thank you for calling. Goodbye!", country=country), False)
 
     call_id = call_log.id
     try:
@@ -125,7 +129,10 @@ async def process_speech_turn(
         db.rollback()
         logger.exception("Voice AI turn failed", extra={"call_log_id": call_id})
         return (
-            build_hangup("Sorry, I'm having technical difficulties. Please try again later."),
+            build_hangup(
+                "Sorry, I'm having technical difficulties. Please try again later.",
+                country=country,
+            ),
             False,
         )
 
@@ -139,20 +146,30 @@ async def process_speech_turn(
     if call_has_booking(call_log.summary) and is_farewell(speech_text):
         call_log.status = CallStatus.COMPLETED
         db.commit()
-        return (build_hangup(f"{reply} Goodbye!"), False)
+        return (build_hangup(f"{reply} Goodbye!", country=country), False)
 
     if result["escalated"]:
         escalation = business.escalation_phone or business.phone_number
         if escalation:
-            return build_transfer_texml(escalation), True
+            return build_transfer_texml(escalation, country=country), True
         return (
             build_hangup(
-                "I've notified our team about your request. Someone will call you back shortly. Goodbye!"
+                "I've notified our team about your request. Someone will call you back shortly. Goodbye!",
+                country=country,
             ),
             True,
         )
 
-    return build_say_and_gather(reply, settings.public_api_url, call_log.id, call_sid=call_log.external_call_id), False
+    return (
+        build_say_and_gather(
+            reply,
+            settings.public_api_url,
+            call_log.id,
+            call_sid=call_log.external_call_id,
+            country=country,
+        ),
+        False,
+    )
 
 
 def handle_inbound_call(db: Session, call_sid: str, from_number: str, to_number: str) -> str:
@@ -173,11 +190,14 @@ def handle_inbound_call(db: Session, call_sid: str, from_number: str, to_number:
             "Resuming in-progress call",
             extra={"call_log_id": existing.id, "call_sid": call_sid},
         )
+        resume_business = db.query(Business).filter(Business.id == existing.business_id).first()
+        resume_country = resume_business.country if resume_business else None
         return build_say_and_gather(
             "Sorry about that. After the tone, please continue.",
             settings.public_api_url,
             existing.id,
             call_sid=call_sid,
+            country=resume_country,
         )
 
     business = find_business_by_phone(db, to_number)
@@ -191,12 +211,14 @@ def handle_inbound_call(db: Session, call_sid: str, from_number: str, to_number:
     denial = SubscriptionService.get_access_denial_reason(business)
     if denial:
         return build_hangup(
-            "Sorry, this AI receptionist is currently unavailable. Please visit our website to contact us. Goodbye."
+            "Sorry, this AI receptionist is currently unavailable. Please visit our website to contact us. Goodbye.",
+            country=business.country,
         )
 
     if not SubscriptionService.is_within_call_limit(db, business):
         return build_hangup(
-            "Sorry, we're unable to take your call right now. Please try again later or visit our website. Goodbye."
+            "Sorry, we're unable to take your call right now. Please try again later or visit our website. Goodbye.",
+            country=business.country,
         )
 
     call = create_voice_call(db, business, call_sid, from_number)
