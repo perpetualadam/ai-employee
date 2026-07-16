@@ -73,7 +73,7 @@ class ConversationState:
         if not call_log_id:
             return state
 
-        from app.models import AIActivityLog, CallLog
+        from app.models import AIActivityLog, Business, CallLog
 
         call = (
             db.query(CallLog)
@@ -83,8 +83,11 @@ class ConversationState:
         if not call:
             return state
 
+        business = db.query(Business).filter(Business.id == business_id).first()
+        country = business.country if business else "US"
+
         if call.caller_phone and call.caller_phone not in ("text-chat", "unknown", ""):
-            state.caller_phone = normalize_phone(call.caller_phone)
+            state.caller_phone = normalize_phone(call.caller_phone, country)
         if call_has_booking(call.summary):
             state.booking_complete = True
 

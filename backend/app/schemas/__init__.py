@@ -116,6 +116,10 @@ class PhoneProvisioningStatusResponse(BaseModel):
     can_search: bool = False
     manual_fallback_allowed: bool = True
     country: str = "US"
+    prefix_label: str = "Area code"
+    prefix_example: str = ""
+    prefix_supported: bool = True
+    example_phone: str = "+15551234567"
 
 
 class PhoneSearchResponse(BaseModel):
@@ -123,6 +127,7 @@ class PhoneSearchResponse(BaseModel):
     country: str
     prefix_label: str = "Area code"  # UI label for the optional prefix input
     prefix_example: str = ""  # Placeholder shown in the UI text box
+    prefix_supported: bool = True
 
 
 class PhoneProvisionRequest(BaseModel):

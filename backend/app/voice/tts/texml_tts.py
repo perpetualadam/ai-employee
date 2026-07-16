@@ -1,6 +1,6 @@
 """TeXML TTS via <Say> — formats text for spoken delivery."""
 
-from app.voice.texml_builder import LANGUAGE, VOICE
+from app.domain.telecom import resolve_voice_locale
 
 
 class TeXMLSayTTS:
@@ -15,5 +15,6 @@ class TeXMLSayTTS:
         return cleaned
 
     @staticmethod
-    def voice_settings() -> dict[str, str]:
-        return {"voice": VOICE, "language": LANGUAGE}
+    def voice_settings(country: str | None = None) -> dict[str, str]:
+        locale = resolve_voice_locale(country)
+        return {"voice": locale.voice, "language": locale.language}

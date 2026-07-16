@@ -46,10 +46,21 @@ function OnboardingWizard() {
     industry: "plumbing",
     country: "US",
     timezone: "America/New_York",
+    currency: "USD",
     phone_number: "",
     escalation_phone: "",
     ai_instructions: "",
   });
+
+  function applyCountryDefaults(countryCode: string, countryList: CountryOption[]) {
+    const match = countryList.find((c) => c.code === countryCode);
+    if (!match?.timezone) return {};
+    return {
+      country: countryCode,
+      timezone: match.timezone,
+      currency: match.currency ?? "USD",
+    };
+  }
 
   useEffect(() => {
     if (!getToken()) {
@@ -69,6 +80,7 @@ function OnboardingWizard() {
           industry: biz.industry,
           country: biz.country || "US",
           timezone: biz.timezone,
+          currency: biz.currency || "USD",
           phone_number: biz.phone_number ?? "",
           escalation_phone: biz.escalation_phone ?? "",
           ai_instructions: biz.ai_instructions ?? "",
@@ -123,6 +135,7 @@ function OnboardingWizard() {
       industry: form.industry,
       country: form.country,
       timezone: form.timezone,
+      currency: form.currency,
     });
     goToStep(2);
   }
@@ -274,7 +287,12 @@ function OnboardingWizard() {
                   <select
                     id="country"
                     value={form.country}
-                    onChange={(e) => setForm({ ...form, country: e.target.value })}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        ...applyCountryDefaults(e.target.value, countries),
+                      }))
+                    }
                     className="h-8 w-full rounded-lg border border-input bg-background px-2 text-sm"
                   >
                     {(countries.length ? countries : [{ code: form.country, label: form.country }]).map(

@@ -42,6 +42,7 @@ class TradeTemplate:
     tool_match_hint: str = ""
     stt_mishear_note: str = ""
     sample_service_name: str = "General service call"
+    intake_questions: tuple[str, ...] = field(default_factory=tuple)
 
     def service_creates(self) -> list[BusinessServiceCreate]:
         return [
@@ -84,6 +85,7 @@ def _tpl(
     tool_match: str = "",
     stt_note: str = "",
     sample: str = "General service call",
+    intake_questions: tuple[str, ...] = (),
 ) -> TradeTemplate:
     return TradeTemplate(
         industry=industry,
@@ -102,6 +104,7 @@ def _tpl(
         tool_match_hint=tool_match,
         stt_mishear_note=stt_note,
         sample_service_name=sample,
+        intake_questions=intake_questions,
     )
 
 
@@ -140,6 +143,11 @@ TRADE_TEMPLATES: dict[Industry, TradeTemplate] = {
         tool_match="Match service_type to what the caller described (e.g. kitchen leak → leak repair, not drain cleaning unless they said drain).",
         stt_note='Speech recognition may mis-hear "leak" as "week". If the caller says "my name is having a week/leak", treat it as a misheard problem — ask what they need fixed.',
         sample="Drain cleaning",
+        intake_questions=(
+            "If active leak or flooding: ask whether water is still flowing and if they can reach the main shut-off valve.",
+            "If no hot water: ask whether it affects the whole property or one tap/shower.",
+            "If clogged drain: ask whether water is backing up into sinks, tubs, or toilets.",
+        ),
     ),
     Industry.GAS_ENGINEER: _tpl(
         Industry.GAS_ENGINEER,
@@ -176,6 +184,11 @@ TRADE_TEMPLATES: dict[Industry, TradeTemplate] = {
         tool_match="Match service_type to the appliance or issue (boiler, cooker, fire) the caller describes.",
         stt_note="If STT puts a heating or gas problem in the name field, ask what appliance or symptom they need help with.",
         sample="Boiler service",
+        intake_questions=(
+            "If no heating: ask whether the boiler shows an error code, low pressure, or pilot-light issue.",
+            "If gas appliance fault: ask which appliance (boiler, cooker, fire) and the symptom.",
+            "If they mention gas smell or a CO alarm: stop routine booking — escalate immediately per emergency rules.",
+        ),
     ),
     Industry.MOBILE_MECHANIC: _tpl(
         Industry.MOBILE_MECHANIC,
@@ -212,6 +225,11 @@ TRADE_TEMPLATES: dict[Industry, TradeTemplate] = {
         tool_match="Match service_type to the vehicle symptom (battery, no-start, brakes) the caller describes.",
         stt_note='STT may mis-hear "brake" as "break" — clarify vehicle safety symptoms before booking.',
         sample="Roadside call-out",
+        intake_questions=(
+            "Ask the vehicle make/model and where it is parked (address or landmark).",
+            "Ask whether the vehicle is in a safe location — motorway hard shoulder is an emergency.",
+            "If won't start: ask whether they hear a click, the engine cranking, or nothing at all.",
+        ),
     ),
     Industry.PLASTERER: _tpl(
         Industry.PLASTERER,
@@ -239,6 +257,11 @@ TRADE_TEMPLATES: dict[Industry, TradeTemplate] = {
         emergency_kw=frozenset({"ceiling falling", "collapse", "bulging ceiling"}),
         inference_kw=frozenset({"plaster", "skim", "ceiling", "wall", "crack", "hole"}),
         sample="Patch repair",
+        intake_questions=(
+            "Ask which room or wall is affected and roughly how large the damaged area is.",
+            "If ceiling damage: ask whether the ceiling is bulging, cracking, or dropping — escalate if collapse risk.",
+            "If after a leak: ask whether the area is still damp or mouldy.",
+        ),
     ),
     Industry.ELECTRICAL: _tpl(
         Industry.ELECTRICAL,
@@ -272,6 +295,11 @@ TRADE_TEMPLATES: dict[Industry, TradeTemplate] = {
         emergency_kw=frozenset({"sparking", "burning smell", "shock", "smoke"}),
         inference_kw=frozenset({"power", "breaker", "socket", "outlet", "light", "wiring"}),
         sample="Fault finding",
+        intake_questions=(
+            "If no power: ask whether it is the whole property or one room/circuit.",
+            "If tripping breaker: ask what was running when it tripped (appliance, outlet, storm).",
+            "If sparking, burning smell, or shock: escalate immediately — do not troubleshoot live faults.",
+        ),
     ),
     Industry.HVAC: _tpl(
         Industry.HVAC,
@@ -305,6 +333,11 @@ TRADE_TEMPLATES: dict[Industry, TradeTemplate] = {
         emergency_kw=frozenset({"no heat", "freezing", "burning smell", "smoke"}),
         inference_kw=frozenset({"ac", "hvac", "heat", "cooling", "furnace", "thermostat"}),
         sample="AC service",
+        intake_questions=(
+            "Ask whether the issue is heating, cooling, or both.",
+            "If no heat in cold weather: ask if vulnerable people (elderly, infants) are in the property.",
+            "If burning smell or smoke from the unit: escalate immediately and tell them to turn the system off.",
+        ),
     ),
     Industry.ROOFING: _tpl(
         Industry.ROOFING,
@@ -332,6 +365,11 @@ TRADE_TEMPLATES: dict[Industry, TradeTemplate] = {
         emergency_kw=frozenset({"water coming in", "storm damage", "hole in roof"}),
         inference_kw=frozenset({"roof", "leak", "shingle", "tile", "gutter", "storm"}),
         sample="Leak repair",
+        intake_questions=(
+            "Ask whether water is actively coming inside right now.",
+            "If storm damage: ask if the roof is exposed, tiles missing, or debris blocking access.",
+            "Ask which floor/room is affected and whether a bucket or tarp is helping temporarily.",
+        ),
     ),
     Industry.CARPENTER: _tpl(
         Industry.CARPENTER,
@@ -356,8 +394,14 @@ TRADE_TEMPLATES: dict[Industry, TradeTemplate] = {
         voice_greeting="for example a door that will not close or shelving that needs fitting",
         voice_empty="a door repair or carpentry job",
         garbled=frozenset({"door", "frame", "cabinet", "shelf", "wood"}),
+        emergency_kw=frozenset({"can't lock", "won't close", "broken lock", "security"}),
         inference_kw=frozenset({"door", "frame", "cabinet", "shelf", "trim", "deck"}),
         sample="Door repair",
+        intake_questions=(
+            "Ask what needs repairing or installing (door, frame, shelving, trim, decking).",
+            "If door won't lock or close: ask whether the property can be secured tonight.",
+            "If structural wood damage: ask whether it affects load-bearing areas or safety.",
+        ),
     ),
     Industry.LOCKSMITH: _tpl(
         Industry.LOCKSMITH,
@@ -385,6 +429,11 @@ TRADE_TEMPLATES: dict[Industry, TradeTemplate] = {
         emergency_kw=frozenset({"child locked", "baby inside", "pet locked"}),
         inference_kw=frozenset({"lock", "key", "lockout", "deadbolt"}),
         sample="Lockout service",
+        intake_questions=(
+            "Ask whether they are locked out of a home, vehicle, or commercial property.",
+            "Ask if they have ID or proof they are authorised to access the property.",
+            "If a child or pet is locked inside: escalate immediately per emergency rules.",
+        ),
     ),
     Industry.PEST_CONTROL: _tpl(
         Industry.PEST_CONTROL,
@@ -412,6 +461,11 @@ TRADE_TEMPLATES: dict[Industry, TradeTemplate] = {
         emergency_kw=frozenset({"wasp", "hornet", "allergic", "stung"}),
         inference_kw=frozenset({"pest", "wasp", "mouse", "rat", "ant", "bed bug"}),
         sample="General pest treatment",
+        intake_questions=(
+            "Ask what pest they've seen and where in the property (kitchen, loft, garden, etc.).",
+            "If wasps/hornets: ask if the nest is near an entry door or window and if anyone has allergies.",
+            "If rodents: ask whether they've seen droppings, heard scratching, or noticed gnaw marks.",
+        ),
     ),
     Industry.LANDSCAPING: _tpl(
         Industry.LANDSCAPING,
@@ -436,8 +490,14 @@ TRADE_TEMPLATES: dict[Industry, TradeTemplate] = {
         voice_greeting="for example lawn care, hedge trimming, or garden maintenance",
         voice_empty="lawn care or hedge trimming",
         garbled=frozenset({"lawn", "garden", "hedge", "tree", "mow"}),
+        emergency_kw=frozenset({"fallen tree", "blocking driveway", "blocked access"}),
         inference_kw=frozenset({"lawn", "garden", "hedge", "tree", "mow", "landscape"}),
         sample="Lawn maintenance",
+        intake_questions=(
+            "Ask what outdoor work they need (lawn mowing, hedge trimming, tree work, garden tidy).",
+            "If fallen tree or branch: ask whether it is blocking a driveway, road, or building access.",
+            "Ask approximate garden size or number of trees if quoting a visit.",
+        ),
     ),
     Industry.PAINTER: _tpl(
         Industry.PAINTER,
@@ -464,6 +524,11 @@ TRADE_TEMPLATES: dict[Industry, TradeTemplate] = {
         garbled=frozenset({"paint", "wall", "ceiling", "peeling"}),
         inference_kw=frozenset({"paint", "room", "exterior", "stain", "decorator"}),
         sample="Interior room paint",
+        intake_questions=(
+            "Ask which rooms or exterior areas need painting and how many coats/surfaces.",
+            "If water stains or mould: ask whether the leak source is fixed and if prep is needed.",
+            "Rush commercial deadlines are not life-safety emergencies — use message_owner if they insist on same-day.",
+        ),
     ),
     Industry.APPLIANCE_REPAIR: _tpl(
         Industry.APPLIANCE_REPAIR,
@@ -491,6 +556,11 @@ TRADE_TEMPLATES: dict[Industry, TradeTemplate] = {
         emergency_kw=frozenset({"gas smell", "smell gas"}),
         inference_kw=frozenset({"washer", "dryer", "fridge", "oven", "dishwasher", "appliance"}),
         sample="Domestic appliance repair",
+        intake_questions=(
+            "Ask which appliance and the symptom (not cooling, leaking, error code, not heating, etc.).",
+            "Ask the brand/model if they know it — helps the technician prepare.",
+            "If gas appliance smell: escalate immediately — do not continue routine booking questions.",
+        ),
     ),
     Industry.GENERAL: _tpl(
         Industry.GENERAL,
@@ -515,5 +585,10 @@ TRADE_TEMPLATES: dict[Industry, TradeTemplate] = {
         voice_empty="the problem you need help with",
         inference_kw=frozenset({"repair", "broken", "install", "fix", "service"}),
         sample="General service call",
+        intake_questions=(
+            "Ask them to describe the problem in their own words before suggesting a service.",
+            "Ask whether anyone is in immediate danger or if utilities (gas, electric, water) are involved.",
+            "If they mention fire, gas smell, flooding, or injury: escalate per emergency rules.",
+        ),
     ),
 }

@@ -46,6 +46,7 @@ def search_phone_numbers(
         numbers=numbers,
         prefix_label=profile.prefix_label,
         prefix_example=profile.prefix_example,
+        prefix_supported=profile.prefix_param is not None,
     )
 
 

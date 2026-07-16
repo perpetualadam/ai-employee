@@ -43,6 +43,7 @@ async def handle_gather_result(
             settings.public_api_url,
             call_log.id,
             call_sid=call_log.external_call_id,
+            country=business.country,
         )
 
     chunk = GatherSpeechSTT.from_speech_result(
@@ -61,6 +62,7 @@ async def handle_gather_result(
             settings.public_api_url,
             call_log.id,
             call_sid=call_log.external_call_id,
+            country=business.country,
         )
 
     speech_text = normalize_caller_speech(chunk.text, business.industry)

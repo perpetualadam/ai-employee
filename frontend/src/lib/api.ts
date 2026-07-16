@@ -262,6 +262,8 @@ export interface TradeOption {
 export interface CountryOption {
   code: string;
   label: string;
+  timezone?: string;
+  currency?: string;
 }
 
 export interface PhoneProvisioningStatus {
@@ -271,6 +273,10 @@ export interface PhoneProvisioningStatus {
   can_search: boolean;
   manual_fallback_allowed: boolean;
   country: string;
+  prefix_label?: string;
+  prefix_example?: string;
+  prefix_supported?: boolean;
+  example_phone?: string;
 }
 
 export interface AvailablePhoneNumber {
@@ -284,6 +290,7 @@ export interface PhoneSearchResult {
   country: string;
   prefix_label: string;   // e.g. "Area code" (US), "City / area" (GB), "STD area code" (AU)
   prefix_example: string; // placeholder for the UI input
+  prefix_supported?: boolean;
 }
 
 export interface PhoneProvisionResult {
