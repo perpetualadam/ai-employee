@@ -28,6 +28,7 @@ ai-employee/
 # Docker
 postgres_data/
 backups/
+backend/storage/
 
 # Logs
 *.log

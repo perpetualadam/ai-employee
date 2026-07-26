@@ -170,6 +170,19 @@ openssl rand -hex 24   # CRON_SECRET
 | `POSTGRES_PASSWORD` | strong password (with `--all`) |
 | `DEBUG` | `false` |
 | `UVICORN_WORKERS` | `4` for launch traffic |
+| `STORAGE_LOCAL_PATH` | `/app/storage` (matches prod Docker volume; do not commit upload files) |
+
+### File storage (verification uploads)
+
+Uploads (e.g. regulatory documents) are stored on disk by the **local storage plugin**, not in Postgres. The folder is **created automatically** on first upload.
+
+| Environment | Behavior |
+|-------------|----------|
+| **Production (`docker-compose.prod.yml`)** | Docker volume `app_storage` → `/app/storage` — survives redeploys |
+| **Local dev (`docker compose up`)** | `./backend/storage/` on your machine (bind-mounted via `./backend:/app`) |
+| **Git** | Never commit `backend/storage/` — runtime data only |
+
+Back up the `app_storage` volume with your VPS backups (same importance as Postgres for uploaded documents).
 
 ### 4. DNS
 

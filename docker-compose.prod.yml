@@ -67,6 +67,9 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:?Set FRONTEND_URL to https://APP_DOMAIN}
       PUBLIC_API_URL: ${PUBLIC_API_URL:?Set PUBLIC_API_URL to https://API_DOMAIN}
       CRON_SECRET: ${CRON_SECRET:?Set CRON_SECRET in .env}
+      STORAGE_LOCAL_PATH: /app/storage
+    volumes:
+      - app_storage:/app/storage
     expose:
       - "8000"
     healthcheck:
@@ -131,3 +134,4 @@ volumes:
   caddy_data:
   caddy_config:
   postgres_data:
+  app_storage:
