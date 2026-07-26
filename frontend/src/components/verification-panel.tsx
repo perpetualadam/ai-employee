@@ -8,7 +8,6 @@ import { Label } from "@/components/ui/label";
 import {
   api,
   ApiError,
-  VerificationDocument,
   VerificationRequirements,
   VerificationStatus,
 } from "@/lib/api";
@@ -168,8 +167,8 @@ export function VerificationPanel({
                       e.target.value = "";
                     }}
                   />
-                  <Button type="button" variant="outline" size="sm" asChild>
-                    <span>{uploading === docType ? "Uploading…" : uploaded ? "Replace" : "Upload"}</span>
+                  <Button type="button" variant="outline" size="sm">
+                    {uploading === docType ? "Uploading…" : uploaded ? "Replace" : "Upload"}
                   </Button>
                 </label>
               )}
