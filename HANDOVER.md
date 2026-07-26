@@ -164,7 +164,7 @@ Text-only: `create_customer` blocked until `user_turn_count >= 2`.
 
 ```bash
 docker compose up -d
-docker compose exec api alembic upgrade head
+# Migrations run automatically via docker-entrypoint.sh on API start
 docker compose exec api python -m unittest discover -s tests -v
 docker compose exec api python scripts/p0_trade_qa.py
 cd frontend && npm install && npm run dev

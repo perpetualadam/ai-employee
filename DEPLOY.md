@@ -21,7 +21,7 @@ All shell scripts use bash and LF line endings (`.gitattributes` enforces this).
 | Artifact | Purpose |
 |----------|---------|
 | `docker-compose.yml` | Local dev (hot reload, Postgres included) |
-| `docker-compose.prod.yml` | Production API + Caddy TLS + optional scheduler |
+| `docker-compose.prod.yml` | Production API + Caddy TLS + optional scheduler; **`migrate` service runs `alembic upgrade head` before API starts** |
 | `deploy/Caddyfile` | Automatic HTTPS (Let's Encrypt) |
 | `.env.production.example` | Production env template |
 | `Makefile` + `scripts/*.sh` | macOS/Linux commands |
@@ -282,8 +282,10 @@ docker compose -f docker-compose.prod.yml logs -f api caddy scheduler
 # Restart API after .env change
 docker compose -f docker-compose.prod.yml up -d --build api
 
-# Run migrations manually
-docker compose -f docker-compose.prod.yml exec api alembic upgrade head
+# Migrations run automatically on `./scripts/prod-up.sh` and before each API start.
+# To apply migrations only (e.g. after pulling new code):
+make migrate-prod
+# or: ./scripts/migrate-prod.sh [--all]
 
 # Stop everything
 docker compose -f docker-compose.prod.yml down

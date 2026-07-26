@@ -53,6 +53,21 @@ services:
       retries: 8
       start_period: 30s
 
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
+      DEBUG: "false"
+    entrypoint: ["python", "scripts/apply_migrations.py"]
+    depends_on:
+      db:
+        condition: service_healthy
+        required: false
+    restart: "no"
+
   api:
     build:
       context: ./backend
@@ -84,10 +99,11 @@ services:
       timeout: 5s
       retries: 12
       start_period: 45s
-    command: >
-      sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-2}"
+    command: app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-2}
+    entrypoint: ["uvicorn"]
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
         required: false
@@ -102,7 +118,8 @@ services:
       PUBLIC_API_URL: http://api:8000
       CRON_SECRET: ${CRON_SECRET:?Set CRON_SECRET in .env}
       REMINDER_CRON_INTERVAL_SECONDS: ${REMINDER_CRON_INTERVAL_SECONDS:-3600}
-    command: python scripts/run_reminders.py
+    command: scripts/run_reminders.py
+    entrypoint: ["python"]
     depends_on:
       api:
         condition: service_healthy

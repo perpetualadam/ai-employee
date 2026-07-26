@@ -25,10 +25,15 @@ else
   echo "Starting app + API + scheduler (external DATABASE_URL required)."
 fi
 
+echo "Step 1/2 — database migrations (includes audit_logs and other schema updates)..."
+docker compose -f docker-compose.prod.yml "${PROFILES[@]}" run --rm migrate
+
+echo "Step 2/2 — starting services..."
 docker compose -f docker-compose.prod.yml "${PROFILES[@]}" up -d --build
 
 echo ""
-echo "Production stack starting. Check status:"
+echo "Production stack started. Migrations run automatically on every deploy."
+echo "Check status:"
 echo "  docker compose -f docker-compose.prod.yml ps"
 echo "  docker compose -f docker-compose.prod.yml logs -f api frontend caddy"
 echo ""

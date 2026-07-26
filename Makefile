@@ -1,7 +1,7 @@
 # AI Employee — common commands (macOS / Linux).
 # Windows: use Docker Desktop + scripts in README, or WSL2 with these targets.
 
-.PHONY: setup dev dev-scheduler test migrate prod prod-bundled prod-logs backup restore frontend
+.PHONY: setup dev dev-scheduler test migrate migrate-prod prod prod-bundled prod-logs backup restore frontend
 
 setup:
 	@chmod +x scripts/*.sh
@@ -17,7 +17,10 @@ test:
 	docker compose exec api python -m unittest discover -s tests -v
 
 migrate:
-	docker compose exec api alembic upgrade head
+	docker compose exec api python scripts/apply_migrations.py
+
+migrate-prod:
+	@./scripts/migrate-prod.sh
 
 frontend:
 	cd frontend && npm install && npm run dev

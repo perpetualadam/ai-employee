@@ -34,8 +34,7 @@
 - [ ] **Set up production database**
   - [ ] Create PostgreSQL database (managed or self-hosted)
   - [ ] Update `DATABASE_URL` in `.env`
-  - [ ] Run migrations: `alembic upgrade head`
-  - [ ] Test database connectivity: `curl /health/ready`
+  - [ ] Migrations run automatically on deploy (`./scripts/prod-up.sh` or `make migrate-prod`); verify `/health/ready` after first deploy
   - **Owner**: DevOps
   - **Acceptance**: `/health/ready` returns `"ok"`
 

@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, inspect, text
 
 from app.config import get_settings
 
-REQUIRED_TABLES = ("sms_logs",)
+REQUIRED_TABLES = ("sms_logs", "audit_logs")
 
 
 def _alembic_config() -> Config:
