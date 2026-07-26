@@ -47,6 +47,10 @@ class UserResponse(BaseModel):
     created_at: datetime
 
 
+class AccountDeleteRequest(BaseModel):
+    confirmation: str = Field(description='Type "DELETE" to confirm permanent account deletion')
+
+
 # ── Business ──────────────────────────────────────────────────────────────────
 
 

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
-import { clearToken } from "@/lib/auth";
+import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -27,8 +27,12 @@ export function DashboardShell({ businessName, children }: DashboardShellProps) 
   const pathname = usePathname();
   const router = useRouter();
 
-  function handleLogout() {
-    clearToken();
+  async function handleLogout() {
+    try {
+      await api.logout();
+    } catch {
+      // Cookie may already be cleared; still redirect.
+    }
     router.push("/login");
   }
 

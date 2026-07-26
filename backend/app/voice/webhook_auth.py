@@ -109,10 +109,20 @@ async def validate_telnyx_webhook(request: Request) -> dict[str, str]:
     timestamp = request.headers.get("telnyx-timestamp", "")
     signature = request.headers.get("telnyx-signature-ed25519", "")
     webhook_id = request.headers.get("webhook-id") or request.headers.get("telnyx-webhook-id")
+    query_bytes = request.url.query.encode("utf-8") if request.url.query else None
 
-    if signature and timestamp and settings.telnyx_public_key:
-        query_bytes = request.url.query.encode("utf-8") if request.url.query else None
-        if not verify_telnyx_webhook_signature(
+    if settings.telnyx_public_key:
+        if not signature or not timestamp:
+            logger.warning(
+                "Telnyx webhook missing signature headers",
+                extra={"method": request.method, "path": request.url.path},
+            )
+            if not settings.debug:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Missing webhook signature",
+                )
+        elif not verify_telnyx_webhook_signature(
             body,
             timestamp,
             signature,
@@ -134,7 +144,7 @@ async def validate_telnyx_webhook(request: Request) -> dict[str, str]:
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Invalid webhook signature",
                 )
-    elif not settings.telnyx_public_key and not settings.debug:
+    elif not settings.debug:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Telnyx is not configured",

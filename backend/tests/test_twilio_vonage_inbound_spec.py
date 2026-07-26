@@ -47,23 +47,26 @@ class TwilioVonageInboundSpecification(unittest.TestCase):
 
     def test_vonage_webhook_normalizes_call_and_speech(self) -> None:
         adapter = VonageVoiceWebhookAdapter()
+        payload = {
+            "uuid": "uuid-77",
+            "from": "+15551112222",
+            "to": "+15553334444",
+            "speech": {
+                "results": [{"text": "I need a plumber", "confidence": "0.91"}],
+            },
+        }
         request = MagicMock()
         request.headers = {"content-type": "application/json"}
-        request.json = AsyncMock(
-            return_value={
-                "uuid": "uuid-77",
-                "from": "+15551112222",
-                "to": "+15553334444",
-                "speech": {
-                    "results": [{"text": "I need a plumber", "confidence": "0.91"}],
-                },
-            }
-        )
+        request.method = "POST"
+        request.url.path = "/api/v1/voice/inbound"
+        request.query_params = {}
+        request.body = AsyncMock(return_value=json.dumps(payload).encode("utf-8"))
 
-        async def _run() -> dict[str, str]:
-            return await adapter.parse_request(request)
+        with patch("app.integrations.adapters.vonage_stubs._require_vonage_webhook_signature"):
+            async def _run() -> dict[str, str]:
+                return await adapter.parse_request(request)
 
-        params = asyncio.run(_run())
+            params = asyncio.run(_run())
         self.assertEqual(params["CallSid"], "uuid-77")
         self.assertEqual(params["From"], "+15551112222")
         self.assertEqual(params["To"], "+15553334444")

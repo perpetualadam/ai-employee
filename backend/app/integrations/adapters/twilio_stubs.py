@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import Request
+from fastapi import HTTPException, Request, status
 
-from app.integrations.contracts import SmsInboundAdapter, VoiceCallControl, VoiceWebhookAdapter
 from app.config import get_settings
+from app.integrations.contracts import SmsInboundAdapter, VoiceCallControl, VoiceWebhookAdapter
+from app.voice.twilio_webhook_auth import validate_twilio_signature
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,24 @@ class TwilioVoiceWebhookAdapter(VoiceWebhookAdapter):
 
     async def parse_request(self, request: Request) -> dict[str, str]:
         form = await request.form()
-        return {k: str(v) for k, v in form.items()}
+        params = {k: str(v) for k, v in form.items()}
+        settings = get_settings()
+        signature = request.headers.get("X-Twilio-Signature", "")
+        if settings.twilio_auth_token:
+            url = str(request.url)
+            if not validate_twilio_signature(url, params, signature, settings.twilio_auth_token):
+                logger.warning("Invalid Twilio webhook signature", extra={"path": request.url.path})
+                if not settings.debug:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Invalid webhook signature",
+                    )
+        elif not settings.debug:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Twilio is not configured",
+            )
+        return params
 
 
 class TwilioSmsInboundAdapter(SmsInboundAdapter):

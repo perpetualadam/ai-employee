@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/card";
 import { useDashboardAuth } from "@/hooks/use-dashboard-auth";
 import { api, ApiError, ConversationDetail, formatDateTime } from "@/lib/api";
-import { getToken } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 export default function ConversationDetailPage() {
@@ -31,10 +30,6 @@ export default function ConversationDetailPage() {
 
   useEffect(() => {
     if (authLoading) return;
-    if (!getToken()) {
-      router.replace("/login");
-      return;
-    }
     api
       .getConversation(id)
       .then(setDetail)

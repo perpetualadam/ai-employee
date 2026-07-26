@@ -15,7 +15,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, ApiError } from "@/lib/api";
-import { setToken } from "@/lib/auth";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -31,12 +30,11 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      const { access_token } = await api.register({
+      await api.register({
         email,
         password,
         full_name: fullName,
       });
-      setToken(access_token);
       router.push("/onboarding");
     } catch (err) {
       setError(err instanceof ApiError ? String(err.message) : "Registration failed");

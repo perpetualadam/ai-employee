@@ -72,11 +72,13 @@ class Settings(BaseSettings):
     twilio_auth_token: str = ""
     vonage_api_key: str = ""
     vonage_api_secret: str = ""
+    vonage_signature_secret: str = ""
 
     # P4 — reminders, monitoring, internal jobs
     reminders_enabled: bool = True
     reminder_hours_before: int = 24
     cron_secret: str = ""
+    redis_url: str = ""
     sentry_dsn: str = ""
     sentry_environment: str = "development"
     sentry_traces_sample_rate: float = 0.1

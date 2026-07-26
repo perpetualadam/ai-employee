@@ -24,8 +24,15 @@ async def parse_inbound_sms_event(request: Request) -> dict[str, str] | None:
     signature = request.headers.get("telnyx-signature-ed25519", "")
     webhook_id = request.headers.get("webhook-id") or request.headers.get("telnyx-webhook-id")
 
-    if signature and timestamp and settings.telnyx_public_key:
-        if not verify_telnyx_webhook_signature(
+    if settings.telnyx_public_key:
+        if not signature or not timestamp:
+            logger.warning("Telnyx messaging webhook missing signature headers")
+            if not settings.debug:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Missing webhook signature",
+                )
+        elif not verify_telnyx_webhook_signature(
             body,
             timestamp,
             signature,
@@ -38,6 +45,11 @@ async def parse_inbound_sms_event(request: Request) -> dict[str, str] | None:
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Invalid webhook signature",
                 )
+    elif not settings.debug:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Telnyx is not configured",
+        )
 
     if not body:
         return None

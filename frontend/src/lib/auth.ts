@@ -1,18 +1,6 @@
-const TOKEN_KEY = "ai_employee_token";
-
-export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-export function setToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
-}
-
-export function clearToken(): void {
-  localStorage.removeItem(TOKEN_KEY);
-}
+export const AUTH_COOKIE_NAME = "access_token";
 
 export function isAuthenticated(): boolean {
-  return !!getToken();
+  if (typeof document === "undefined") return false;
+  return document.cookie.split(";").some((part) => part.trim().startsWith(`${AUTH_COOKIE_NAME}=`));
 }

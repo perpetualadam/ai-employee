@@ -3,11 +3,25 @@
 
 {$APP_DOMAIN} {
 	email {$ACME_EMAIL}
+	header {
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
 	reverse_proxy frontend:3000
 }
 
 {$API_DOMAIN} {
 	email {$ACME_EMAIL}
+	header {
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
 	# Telnyx webhooks, voice gather, optional WebSocket stream mode
 	reverse_proxy api:8000
 }

@@ -15,7 +15,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, ApiError } from "@/lib/api";
-import { setToken } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -30,8 +29,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const { access_token } = await api.login({ email, password });
-      setToken(access_token);
+      await api.login({ email, password });
       const business = await api.getBusiness();
       router.push(business.onboarding_completed ? "/dashboard" : "/onboarding");
     } catch (err) {

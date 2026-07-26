@@ -3,11 +3,14 @@
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-# Create limiter instance
+from app.config import get_settings
+from app.core.rate_limit_storage import rate_limit_storage_uri
+
+_settings = get_settings()
 limiter = Limiter(
     key_func=get_remote_address,
-    default_limits=["1000/hour"],  # Global default
-    storage_uri="memory://",  # Use Redis in production: "redis://localhost:6379"
+    default_limits=["1000/hour"],
+    storage_uri=rate_limit_storage_uri(_settings.redis_url),
 )
 
 

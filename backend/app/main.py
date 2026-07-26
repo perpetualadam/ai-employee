@@ -2,17 +2,19 @@
 
 import logging
 
-from fastapi import Depends, FastAPI, Request, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from app.api import appointments, auth, billing, business, calls, conversations, customers, dashboard, internal, jobs, onboarding, phone, public, receptionist, sms, voice
+from app.api import appointments, auth, billing, business, calls, compliance, conversations, customers, dashboard, internal, jobs, onboarding, phone, public, receptionist, sms, voice
 from app.api import admin_providers, admin_telecom
 from app.config import get_settings
 from app.core.logging_config import setup_logging
 from app.core.monitoring import check_database, init_sentry, sentry_active
 from app.core.rate_limit import _rate_limit_exceeded_handler, limiter
+from app.core.security_headers import SecurityHeadersMiddleware
+from app.core.security_policy import validate_security_policy, verify_internal_secret
 from app.database import get_db
 import app.plugins.bootstrap  # noqa: F401 — discover and register plugins at startup
 import app.providers.bootstrap  # noqa: F401 — bridge plugins to provider registry
@@ -21,6 +23,8 @@ settings = get_settings()
 setup_logging(debug=settings.debug)
 init_sentry()
 logger = logging.getLogger(__name__)
+
+validate_security_policy(settings)
 
 app = FastAPI(
     title=settings.app_name,
@@ -32,6 +36,8 @@ app = FastAPI(
 # Rate limiting
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -59,6 +65,7 @@ app.include_router(voice.router, prefix=settings.api_v1_prefix)
 app.include_router(calls.router, prefix=settings.api_v1_prefix)
 app.include_router(internal.router, prefix=settings.api_v1_prefix)
 app.include_router(billing.router, prefix=settings.api_v1_prefix)
+app.include_router(compliance.router, prefix=settings.api_v1_prefix)
 app.include_router(onboarding.router, prefix=settings.api_v1_prefix)
 app.include_router(admin_telecom.router, prefix=settings.api_v1_prefix)
 app.include_router(admin_providers.router, prefix=settings.api_v1_prefix)
@@ -79,8 +86,21 @@ def health_ready(db=Depends(get_db)) -> dict:
     }
 
 
+def _require_detailed_health_access(
+    x_cron_secret: str | None = Header(default=None),
+) -> None:
+    """Detailed /health is public in debug; requires CRON_SECRET in production."""
+    if settings.debug:
+        return
+    if not settings.cron_secret.strip() or x_cron_secret != settings.cron_secret:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+
 @app.get("/health")
-def health_check(db=Depends(get_db)) -> dict:
+def health_check(
+    db=Depends(get_db),
+    _: None = Depends(_require_detailed_health_access),
+) -> dict:
     from app.providers.factory import (
         get_factory,
         get_messaging_provider,

@@ -70,7 +70,7 @@ async def chat_with_receptionist(
         logger.exception("Receptionist chat failed", extra={"business_id": business.id})
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"AI receptionist error: {exc}",
+            detail="AI receptionist is temporarily unavailable. Please try again shortly.",
         ) from exc
 
     background_tasks.add_task(_summarize_conversation, session_id)

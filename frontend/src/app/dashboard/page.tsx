@@ -25,7 +25,6 @@ import {
 } from "@/components/ui/table";
 import { useDashboardAuth } from "@/hooks/use-dashboard-auth";
 import { api, DashboardSummary, formatDate, formatTime } from "@/lib/api";
-import { getToken } from "@/lib/auth";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -35,10 +34,6 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (authLoading) return;
-    if (!getToken()) {
-      router.replace("/login");
-      return;
-    }
 
     api
       .getDashboard()

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
+from app.core.security_policy import verify_internal_secret
 from app.database import get_db
 from app.dependencies.providers import get_phone_number_service, get_verification_service
 from app.models.enums import PhoneNumberStatus, RegulatoryStatus
@@ -27,23 +27,10 @@ from app.services.verification_service import VerificationService
 router = APIRouter(prefix="/admin/telecom", tags=["admin-telecom"])
 
 
-def _verify_admin_secret(x_cron_secret: str | None = Header(default=None)) -> None:
-    settings = get_settings()
-    if not settings.cron_secret:
-        if settings.debug:
-            return
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="CRON_SECRET is not configured.",
-        )
-    if x_cron_secret != settings.cron_secret:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid admin secret")
-
-
 @router.get("/dashboard")
 def telecom_dashboard(
     db: Session = Depends(get_db),
-    _: None = Depends(_verify_admin_secret),
+    _: None = Depends(verify_internal_secret),
 ) -> dict:
     phone_repo = PhoneNumberRepository(db)
     profile_repo = RegulatoryProfileRepository(db)
@@ -124,7 +111,7 @@ def telecom_dashboard(
 def retry_failed_provisioning(
     record_id: str,
     service: PhoneNumberService = Depends(get_phone_number_service),
-    _: None = Depends(_verify_admin_secret),
+    _: None = Depends(verify_internal_secret),
 ) -> dict:
     return service.retry_failed_provisioning(record_id)
 
@@ -134,7 +121,7 @@ def refresh_verification_status(
     profile_id: str,
     db: Session = Depends(get_db),
     verification: VerificationService = Depends(get_verification_service),
-    _: None = Depends(_verify_admin_secret),
+    _: None = Depends(verify_internal_secret),
 ) -> dict:
     from app.models.telecom import BusinessRegulatoryProfile
 

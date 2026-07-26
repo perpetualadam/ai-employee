@@ -20,7 +20,6 @@ import {
   formatDate,
   formatDateTime,
 } from "@/lib/api";
-import { getToken } from "@/lib/auth";
 
 function LeadCardPreview({ lead }: { lead: ConversationListItem["lead_card"] }) {
   return (
@@ -43,10 +42,6 @@ export default function ConversationsPage() {
 
   useEffect(() => {
     if (authLoading) return;
-    if (!getToken()) {
-      router.replace("/login");
-      return;
-    }
     api
       .listConversations()
       .then(setItems)

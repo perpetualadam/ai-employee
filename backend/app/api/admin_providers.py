@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.config import get_settings
+from app.core.security_policy import verify_internal_secret
 from app.plugins.manager import get_plugin_manager
 from app.providers.factory import get_factory, get_registry
 from app.providers.metrics import get_provider_metrics
@@ -14,21 +14,8 @@ from app.providers.services import ProviderService
 router = APIRouter(prefix="/admin/providers", tags=["admin-providers"])
 
 
-def _verify_admin_secret(x_cron_secret: str | None = Header(default=None)) -> None:
-    settings = get_settings()
-    if not settings.cron_secret:
-        if settings.debug:
-            return
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="CRON_SECRET is not configured.",
-        )
-    if x_cron_secret != settings.cron_secret:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid admin secret")
-
-
 @router.get("/management")
-def provider_management_dashboard(_: None = Depends(_verify_admin_secret)) -> dict:
+def provider_management_dashboard(_: None = Depends(verify_internal_secret)) -> dict:
     registry = get_registry()
     return {
         "installed": registry.discover(),
@@ -42,7 +29,7 @@ def provider_management_dashboard(_: None = Depends(_verify_admin_secret)) -> di
 def test_provider_connection(
     service: str,
     provider_name: str,
-    _: None = Depends(_verify_admin_secret),
+    _: None = Depends(verify_internal_secret),
 ) -> dict:
     try:
         provider_service = ProviderService(service)
@@ -70,7 +57,7 @@ def preview_migration_plan(
     from_provider: str,
     to_provider: str,
     phone_number: str | None = None,
-    _: None = Depends(_verify_admin_secret),
+    _: None = Depends(verify_internal_secret),
 ) -> dict:
     service = ProviderMigrationService()
     if phone_number:
@@ -89,5 +76,5 @@ def preview_migration_plan(
 
 
 @router.get("/plugins")
-def plugin_management_dashboard(_: None = Depends(_verify_admin_secret)) -> dict:
+def plugin_management_dashboard(_: None = Depends(verify_internal_secret)) -> dict:
     return get_plugin_manager().admin_snapshot()

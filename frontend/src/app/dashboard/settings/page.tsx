@@ -32,6 +32,9 @@ export default function SettingsPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [chatOrigin, setChatOrigin] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
 
   useEffect(() => {
     setChatOrigin(window.location.origin);
@@ -64,6 +67,45 @@ export default function SettingsPage() {
       setError(err instanceof ApiError ? err.message : "Failed to save");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleExportData() {
+    setExporting(true);
+    setError("");
+    setMessage("");
+    try {
+      const payload = await api.exportAccountData();
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `ai-employee-export-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setMessage("Account data export downloaded.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Export failed");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function handleDeleteAccount() {
+    if (deleteConfirmation !== "DELETE") {
+      setError('Type DELETE in the confirmation box to permanently delete your account.');
+      return;
+    }
+    setDeleting(true);
+    setError("");
+    setMessage("");
+    try {
+      await api.deleteAccount("DELETE");
+      window.location.href = "/login";
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Account deletion failed");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -246,6 +288,39 @@ export default function SettingsPage() {
               Set GROQ_API_KEY and Telnyx credentials (TELNYX_API_KEY, TELNYX_PUBLIC_KEY,
               TELNYX_ACCOUNT_SID) on the backend.
             </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Privacy &amp; data</CardTitle>
+            <CardDescription>
+              Export your account data or permanently delete your account and business data
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap gap-3">
+              <Button variant="outline" onClick={handleExportData} disabled={exporting}>
+                {exporting ? "Preparing export…" : "Download my data"}
+              </Button>
+            </div>
+            <div className="space-y-2 rounded-lg border border-destructive/30 p-4">
+              <p className="text-sm font-medium text-destructive">Delete account</p>
+              <p className="text-sm text-muted-foreground">
+                This permanently removes your user account, business profile, customers, jobs,
+                conversations, and related records. This cannot be undone.
+              </p>
+              <Label htmlFor="delete-confirmation">Type DELETE to confirm</Label>
+              <Input
+                id="delete-confirmation"
+                value={deleteConfirmation}
+                onChange={(e) => setDeleteConfirmation(e.target.value)}
+                placeholder="DELETE"
+              />
+              <Button variant="destructive" onClick={handleDeleteAccount} disabled={deleting}>
+                {deleting ? "Deleting…" : "Delete my account"}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>

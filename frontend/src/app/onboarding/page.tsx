@@ -18,7 +18,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api, ApiError, Business, CountryOption, TradeOption } from "@/lib/api";
-import { getToken } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 const STEPS = [
@@ -64,10 +63,6 @@ function OnboardingWizard() {
   }
 
   useEffect(() => {
-    if (!getToken()) {
-      router.replace("/login");
-      return;
-    }
     api
       .getBusiness()
       .then((biz) => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { DashboardShell } from "@/components/dashboard/shell";
 import { Button } from "@/components/ui/button";
@@ -40,7 +40,7 @@ type ManagementResponse = {
   metrics: Array<Record<string, unknown>>;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
 
 export default function AdminProvidersPage() {
   const { businessName, loading: authLoading } = useDashboardAuth();
@@ -56,6 +56,7 @@ export default function AdminProvidersPage() {
     try {
       const response = await fetch(`${API_BASE}/admin/providers/management`, {
         headers: { "X-Cron-Secret": adminSecret.trim() },
+        credentials: "include",
       });
       if (!response.ok) {
         throw new Error(await response.text());
@@ -69,13 +70,9 @@ export default function AdminProvidersPage() {
     }
   }, [adminSecret]);
 
-  useEffect(() => {
-    const saved = window.sessionStorage.getItem("admin_secret");
-    if (saved) setAdminSecret(saved);
-  }, []);
+  const adminEnabled = process.env.NEXT_PUBLIC_ENABLE_ADMIN_UI === "true";
 
   async function handleLoad() {
-    window.sessionStorage.setItem("admin_secret", adminSecret.trim());
     await load();
   }
 
@@ -83,6 +80,7 @@ export default function AdminProvidersPage() {
     const response = await fetch(`${API_BASE}/admin/providers/test/${service}/${name}`, {
       method: "POST",
       headers: { "X-Cron-Secret": adminSecret.trim() },
+      credentials: "include",
     });
     if (!response.ok) {
       setError(await response.text());
@@ -96,6 +94,17 @@ export default function AdminProvidersPage() {
       <div className="flex min-h-screen items-center justify-center">
         <p className="text-muted-foreground">Loading...</p>
       </div>
+    );
+  }
+
+  if (!adminEnabled) {
+    return (
+      <DashboardShell businessName={businessName}>
+        <div className="mx-auto max-w-xl py-16 text-center">
+          <h1 className="text-2xl font-bold tracking-tight">Not found</h1>
+          <p className="mt-2 text-muted-foreground">This page is not available.</p>
+        </div>
+      </DashboardShell>
     );
   }
 
@@ -113,7 +122,7 @@ export default function AdminProvidersPage() {
           <CardHeader>
             <CardTitle>Admin access</CardTitle>
             <CardDescription>
-              Uses the backend CRON_SECRET header — same as internal admin telecom routes
+              Enter the backend CRON_SECRET for this session only — it is not stored in the browser
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-end">

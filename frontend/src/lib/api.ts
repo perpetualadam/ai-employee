@@ -1,6 +1,4 @@
-import { getToken } from "./auth";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
 
 export class ApiError extends Error {
   constructor(
@@ -23,19 +21,21 @@ function formatErrorDetail(detail: unknown): string {
 async function request<T>(
   path: string,
   options: RequestInit = {},
-  token?: string | null,
 ): Promise<T> {
   const headers: HeadersInit = {
-    "Content-Type": "application/json",
     ...(options.headers ?? {}),
   };
 
-  const authToken = token ?? getToken();
-  if (authToken) {
-    (headers as Record<string, string>)["Authorization"] = `Bearer ${authToken}`;
+  if (!(options.body instanceof FormData)) {
+    (headers as Record<string, string>)["Content-Type"] =
+      (headers as Record<string, string>)["Content-Type"] ?? "application/json";
   }
 
-  const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  const res = await fetch(`${API_URL}${path}`, {
+    ...options,
+    headers,
+    credentials: "include",
+  });
 
   if (res.status === 204) {
     return undefined as T;
@@ -54,13 +54,26 @@ export const api = {
     request<{ access_token: string }>("/auth/register", {
       method: "POST",
       body: JSON.stringify(data),
-    }, null),
+    }),
 
   login: (data: { email: string; password: string }) =>
     request<{ access_token: string }>("/auth/login", {
       method: "POST",
       body: JSON.stringify(data),
-    }, null),
+    }),
+
+  logout: () =>
+    request<void>("/auth/logout", {
+      method: "POST",
+    }),
+
+  exportAccountData: () => request<Record<string, unknown>>("/compliance/export"),
+
+  deleteAccount: (confirmation: string) =>
+    request<void>("/compliance/account", {
+      method: "DELETE",
+      body: JSON.stringify({ confirmation }),
+    }),
 
   getMe: () => request<User>("/auth/me"),
   getBusiness: () => request<Business>("/business"),
@@ -91,13 +104,10 @@ export const api = {
     const form = new FormData();
     form.append("document_type", documentType);
     form.append("file", file);
-    const token = getToken();
-    const headers: HeadersInit = {};
-    if (token) headers.Authorization = `Bearer ${token}`;
     const res = await fetch(`${API_URL}/business/phone/verification/documents`, {
       method: "POST",
-      headers,
       body: form,
+      credentials: "include",
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -126,15 +136,15 @@ export const api = {
   getConversation: (id: string) => request<ConversationDetail>(`/conversations/${id}`),
 
   getAddressConfirmInfo: (token: string) =>
-    request<AddressConfirmInfo>(`/public/address-confirm/${token}`, {}, null),
+    request<AddressConfirmInfo>(`/public/address-confirm/${token}`),
   submitAddressConfirm: (token: string, address: string) =>
     request<AddressConfirmResult>(`/public/address-confirm/${token}`, {
       method: "POST",
       body: JSON.stringify({ address }),
-    }, null),
+    }),
 
   getPublicChatInfo: (slug: string) =>
-    request<PublicChatInfo>(`/public/chat/${slug}`, {}, null),
+    request<PublicChatInfo>(`/public/chat/${slug}`),
 
   publicChat: (
     slug: string,
@@ -148,10 +158,10 @@ export const api = {
     request<PublicChatResponse>(`/public/chat/${slug}`, {
       method: "POST",
       body: JSON.stringify(data),
-    }, null),
+    }),
 
   getPublicContinueInfo: (token: string) =>
-    request<PublicContinueInfo>(`/public/continue/${token}`, {}, null),
+    request<PublicContinueInfo>(`/public/continue/${token}`),
 
   publicChatContinue: (
     token: string,
@@ -165,7 +175,7 @@ export const api = {
     request<PublicChatResponse>(`/public/continue/${token}`, {
       method: "POST",
       body: JSON.stringify(data),
-    }, null),
+    }),
 
   // Customers
   listCustomers: (search?: string) =>
