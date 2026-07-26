@@ -41,7 +41,9 @@ class DeepgramSpeechService:
         audio_stream: AsyncIterator[bytes],
         *,
         language: str = "en-US",
+        encoding: str = "mulaw",
+        sample_rate: int = 8000,
     ) -> AsyncIterator[TranscriptChunk]:
         stt = DeepgramSTT(self._api_key(), language=language)
-        async for chunk in stt.transcribe_stream(audio_stream):
+        async for chunk in stt.transcribe_stream(audio_stream, encoding=encoding, sample_rate=sample_rate):
             yield chunk

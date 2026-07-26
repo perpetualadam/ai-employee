@@ -15,8 +15,9 @@ from app.voice.call_service import handle_call_status, handle_inbound_call
 from app.voice.gather_handler import handle_gather_result
 from app.services.voice_mode_service import VoiceModeService
 from app.voice.media_stream_handler import handle_media_stream
+from app.voice.duplex.handler import handle_duplex_stream
 from app.voice.stt.gather_stt import GatherSpeechSTT
-from app.voice.texml_builder import build_empty_response, build_hangup, build_outbound_answer_texml
+from app.voice.voice_markup import get_voice_markup, resolve_voice_markup
 from app.integrations.registry import get_voice_webhook_adapter
 
 logger = logging.getLogger(__name__)
@@ -33,8 +34,8 @@ async def _summarize_conversation(call_log_id: str) -> None:
         db.close()
 
 
-def _texml_response(texml: str) -> Response:
-    return Response(content=texml, media_type="application/xml")
+def _markup_response(markup: str, content_type: str) -> Response:
+    return Response(content=markup, media_type=content_type)
 
 
 @router.get("/beep.wav")
@@ -48,8 +49,10 @@ async def inbound_call(
     request: Request,
     db: Session = Depends(get_db),
 ) -> Response:
-    """Telnyx TeXML webhook when a call comes in. Set as TeXML Application voice URL."""
-    params = await get_voice_webhook_adapter().parse_request(request)
+    """CPaaS voice webhook when a call comes in."""
+    webhook = get_voice_webhook_adapter()
+    markup_builder = get_voice_markup(webhook.provider_name)
+    params = await webhook.parse_request(request)
 
     call_sid = params.get("CallSid", "")
     from_number = params.get("From", "")
@@ -61,7 +64,12 @@ async def inbound_call(
     effective_mode = VoiceModeService.effective_mode()
     if settings.voice_mode == "stream" and effective_mode == "gather":
         logger.info(
-            "VOICE_MODE=stream requested; using TeXML gather (Deepgram/Telnyx stream not fully configured)",
+            "VOICE_MODE=stream requested; using TeXML gather (streaming not fully configured)",
+            extra={"requested": settings.voice_mode, "effective": effective_mode},
+        )
+    if settings.voice_mode == "duplex" and effective_mode == "gather":
+        logger.info(
+            "VOICE_MODE=duplex requested; using TeXML gather (duplex not fully configured)",
             extra={"requested": settings.voice_mode, "effective": effective_mode},
         )
 
@@ -85,11 +93,11 @@ async def inbound_call(
                 "Recovering speech via inbound fallback",
                 extra={"call_log_id": existing.id, "speech": speech_result},
             )
-            texml = await handle_gather_result(db, existing.id, speech_result, confidence)
-            return _texml_response(texml)
+            markup = await handle_gather_result(db, existing.id, speech_result, confidence)
+            return _markup_response(markup, markup_builder.content_type)
 
-    texml = handle_inbound_call(db, call_sid, from_number, to_number)
-    return _texml_response(texml)
+    markup = handle_inbound_call(db, call_sid, from_number, to_number)
+    return _markup_response(markup, markup_builder.content_type)
 
 
 @router.api_route("/gather", methods=["GET", "POST"])
@@ -98,8 +106,10 @@ async def gather_speech(
     call_log_id: str = Query(...),
     db: Session = Depends(get_db),
 ) -> Response:
-    """Telnyx webhook after speech is recognized via <Gather input='speech'>."""
-    params = await get_voice_webhook_adapter().parse_request(request)
+    """CPaaS webhook after speech is recognized."""
+    webhook = get_voice_webhook_adapter()
+    markup_builder = get_voice_markup(webhook.provider_name)
+    params = await webhook.parse_request(request)
 
     speech_result, confidence = GatherSpeechSTT.extract_from_params(params)
 
@@ -114,8 +124,8 @@ async def gather_speech(
             extra={"call_log_id": call_log_id, "speech": speech_result, "confidence": confidence},
         )
 
-    texml = await handle_gather_result(db, call_log_id, speech_result, confidence)
-    return _texml_response(texml)
+    markup = await handle_gather_result(db, call_log_id, speech_result, confidence)
+    return _markup_response(markup, markup_builder.content_type)
 
 
 @router.api_route("/status", methods=["GET", "POST"])
@@ -125,8 +135,10 @@ async def call_status(
     call_log_id: str = Query(default=""),
     db: Session = Depends(get_db),
 ) -> Response:
-    """Telnyx call status callback — marks call complete and records duration."""
-    params = await get_voice_webhook_adapter().parse_request(request)
+    """Call status callback — marks call complete and records duration."""
+    webhook = get_voice_webhook_adapter()
+    markup_builder = get_voice_markup(webhook.provider_name)
+    params = await webhook.parse_request(request)
 
     if call_log_id:
         status_value = params.get("CallStatus", "")
@@ -139,7 +151,7 @@ async def call_status(
         if status_value == "completed":
             background_tasks.add_task(_summarize_conversation, call_log_id)
 
-    return _texml_response(build_empty_response())
+    return _markup_response(markup_builder.build_empty(), markup_builder.content_type)
 
 
 @router.get("/mode")
@@ -153,8 +165,9 @@ async def outbound_answer(
     call_log_id: str = Query(...),
     db: Session = Depends(get_db),
 ) -> Response:
-    """TeXML for when a customer answers an outbound callback."""
-    await get_voice_webhook_adapter().parse_request(request)
+    """Voice markup when a customer answers an outbound callback."""
+    webhook = get_voice_webhook_adapter()
+    await webhook.parse_request(request)
 
     from app.models import Business, CallLog
 
@@ -163,22 +176,44 @@ async def outbound_answer(
         .filter(CallLog.id == call_log_id)
         .first()
     )
+    markup_builder = get_voice_markup(call.provider if call and call.provider else webhook.provider_name)
     if call is None:
-        return _texml_response(build_hangup("Sorry, this call could not be completed."))
+        return _markup_response(
+            markup_builder.build_hangup("Sorry, this call could not be completed."),
+            markup_builder.content_type,
+        )
 
     business = db.query(Business).filter(Business.id == call.business_id).first()
     if business is None:
-        return _texml_response(build_hangup("Sorry, this call could not be completed."))
+        return _markup_response(
+            markup_builder.build_hangup("Sorry, this call could not be completed."),
+            markup_builder.content_type,
+        )
 
     escalation = business.escalation_phone or business.phone_number
-    texml = build_outbound_answer_texml(
+    markup = markup_builder.build_outbound_answer(
         business.name,
         escalation,
         reason=call.summary,
+        country=business.country,
     )
     call.status = CallStatus.IN_PROGRESS
     db.commit()
-    return _texml_response(texml)
+    return _markup_response(markup, markup_builder.content_type)
+
+
+@router.websocket("/duplex/stream")
+async def duplex_media_stream(
+    websocket: WebSocket,
+    call_log_id: str = Query(...),
+    call_sid: str = Query(default=""),
+) -> None:
+    """Persistent CPaaS media stream — duplex STT + barge-in (Telnyx, Twilio, Vonage)."""
+    await handle_duplex_stream(
+        websocket,
+        call_log_id=call_log_id,
+        call_sid=call_sid or None,
+    )
 
 
 @router.websocket("/stream")

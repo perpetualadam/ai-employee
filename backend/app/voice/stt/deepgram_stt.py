@@ -23,16 +23,16 @@ class DeepgramSTT:
         self.language = language
 
     async def transcribe_stream(
-        self, audio_stream: AsyncIterator[bytes]
+        self, audio_stream: AsyncIterator[bytes], *, encoding: str = "mulaw", sample_rate: int = 8000
     ) -> AsyncIterator[TranscriptChunk]:
         """
-        Stream mulaw 8kHz audio chunks to Deepgram and yield transcript chunks.
-        Used by the Media Stream WebSocket handler.
+        Stream audio chunks to Deepgram and yield transcript chunks.
+        Default is mulaw 8 kHz (Telnyx/Twilio); Vonage duplex uses linear16 16 kHz.
         """
         import websockets
 
         params = (
-            "encoding=mulaw&sample_rate=8000&channels=1"
+            f"encoding={encoding}&sample_rate={sample_rate}&channels=1"
             f"&language={self.language}&model=nova-2-phonecall"
             "&interim_results=true&endpointing=300&punctuate=true"
         )

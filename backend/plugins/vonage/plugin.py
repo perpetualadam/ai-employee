@@ -46,11 +46,13 @@ class VonagePlugin(TelephonyPlugin):
         registry.register(ProviderService.REGULATORY, self._regulatory)
 
     def register_integrations(self) -> None:
+        from app.integrations.adapters.vonage_duplex import VonageDuplexMediaAdapter
         from app.integrations.adapters.vonage_stubs import (
             VonageSmsInboundAdapter,
             VonageVoiceCallControl,
             VonageVoiceWebhookAdapter,
         )
+        from app.integrations.registry import register_duplex_adapter
         from app.services.messaging.factory import register_sms_outbound
         from app.services.messaging.vonage_sms import VonageSmsProvider
 
@@ -58,6 +60,7 @@ class VonagePlugin(TelephonyPlugin):
         register_voice_webhook("vonage", VonageVoiceWebhookAdapter)
         register_sms_inbound("vonage", VonageSmsInboundAdapter)
         register_sms_outbound("vonage", VonageSmsProvider)
+        register_duplex_adapter("vonage", VonageDuplexMediaAdapter)
 
 
 def create_plugin() -> VonagePlugin:

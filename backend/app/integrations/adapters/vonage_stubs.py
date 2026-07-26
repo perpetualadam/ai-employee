@@ -24,7 +24,14 @@ class VonageVoiceCallControl(VoiceCallControl):
     async def transfer_call(self, call_id: str, to_number: str) -> None:
         if not self.is_configured():
             raise RuntimeError("Vonage voice is not configured")
-        logger.info("Vonage stub transfer", extra={"call_id": call_id, "to": to_number})
+        from app.integrations.adapters.vonage_duplex import VonageDuplexMediaAdapter
+
+        adapter = VonageDuplexMediaAdapter()
+        ncco = adapter.build_transfer_response(to_number)
+        from app.voice import vonage_client
+
+        vonage_client.update_call_ncco(call_id, ncco)
+        logger.info("Vonage transfer initiated", extra={"call_id": call_id, "to": to_number})
 
 
 class VonageVoiceWebhookAdapter(VoiceWebhookAdapter):
@@ -33,8 +40,39 @@ class VonageVoiceWebhookAdapter(VoiceWebhookAdapter):
         return "vonage"
 
     async def parse_request(self, request: Request) -> dict[str, str]:
-        payload = await request.json()
-        return {k: str(v) for k, v in payload.items() if isinstance(v, (str, int, float))}
+        content_type = (request.headers.get("content-type") or "").lower()
+        if "json" in content_type:
+            payload = await request.json()
+        else:
+            form = await request.form()
+            payload = {k: v for k, v in form.items()}
+
+        flat: dict[str, str] = {}
+        if isinstance(payload, dict):
+            for key, value in payload.items():
+                if isinstance(value, (str, int, float)):
+                    flat[str(key)] = str(value)
+
+            speech = payload.get("speech")
+            if isinstance(speech, dict):
+                results = speech.get("results") or []
+                if results and isinstance(results[0], dict):
+                    best = results[0]
+                    text = str(best.get("text") or "").strip()
+                    if text:
+                        flat["SpeechResult"] = text
+                    if best.get("confidence") is not None:
+                        flat["Confidence"] = str(best.get("confidence"))
+
+        if flat.get("uuid") and not flat.get("CallSid"):
+            flat["CallSid"] = flat["uuid"]
+        if flat.get("conversation_uuid") and not flat.get("CallSid"):
+            flat["CallSid"] = flat["conversation_uuid"]
+        if flat.get("from") and not flat.get("From"):
+            flat["From"] = flat["from"]
+        if flat.get("to") and not flat.get("To"):
+            flat["To"] = flat["to"]
+        return flat
 
 
 class VonageSmsInboundAdapter(SmsInboundAdapter):

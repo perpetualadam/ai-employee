@@ -27,34 +27,36 @@ class ReminderServiceSpecification(unittest.TestCase):
 
 class VoiceModeServiceSpecification(unittest.TestCase):
     def test_stream_falls_back_to_gather_without_stt_plugin(self) -> None:
+        markup = MagicMock()
+        markup.supports_streaming.return_value = True
+        markup.is_configured.return_value = True
         with patch("app.services.voice_mode_service.get_settings") as settings_mock:
             settings_mock.return_value.voice_mode = "stream"
-            settings_mock.return_value.telnyx_texml_connection_id = "conn"
-            settings_mock.return_value.telnyx_account_sid = "acct"
             with patch(
                 "app.services.voice_mode_service.get_speech_to_text_plugin",
                 return_value=None,
             ):
                 with patch(
-                    "app.services.voice_mode_service.telnyx_client.is_telnyx_configured",
-                    return_value=True,
+                    "app.services.voice_mode_service.resolve_voice_markup",
+                    return_value=markup,
                 ):
                     self.assertEqual(VoiceModeService.effective_mode(), "gather")
 
-    def test_stream_active_when_stt_and_telnyx_configured(self) -> None:
+    def test_stream_active_when_stt_and_markup_configured(self) -> None:
         stt = MagicMock()
         stt.is_configured.return_value = True
+        markup = MagicMock()
+        markup.supports_streaming.return_value = True
+        markup.is_configured.return_value = True
         with patch("app.services.voice_mode_service.get_settings") as settings_mock:
             settings_mock.return_value.voice_mode = "stream"
-            settings_mock.return_value.telnyx_texml_connection_id = "conn"
-            settings_mock.return_value.telnyx_account_sid = "acct"
             with patch(
                 "app.services.voice_mode_service.get_speech_to_text_plugin",
                 return_value=stt,
             ):
                 with patch(
-                    "app.services.voice_mode_service.telnyx_client.is_telnyx_configured",
-                    return_value=True,
+                    "app.services.voice_mode_service.resolve_voice_markup",
+                    return_value=markup,
                 ):
                     self.assertEqual(VoiceModeService.effective_mode(), "stream")
 

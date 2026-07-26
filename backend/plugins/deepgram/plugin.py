@@ -41,8 +41,15 @@ class DeepgramPlugin(SpeechToTextPlugin):
         audio_stream: AsyncIterator[bytes],
         *,
         language: str = "en-US",
+        encoding: str = "mulaw",
+        sample_rate: int = 8000,
     ) -> AsyncIterator[TranscriptChunk]:
-        async for chunk in self._service.transcribe_stream(audio_stream, language=language):
+        async for chunk in self._service.transcribe_stream(
+            audio_stream,
+            language=language,
+            encoding=encoding,
+            sample_rate=sample_rate,
+        ):
             yield chunk
 
 

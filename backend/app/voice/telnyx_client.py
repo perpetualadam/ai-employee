@@ -77,6 +77,14 @@ def update_call_texml(call_sid: str, texml: str) -> None:
         logger.info("Telnyx call updated with TeXML", extra={"call_sid": call_sid})
 
 
+def playback_stop(call_control_id: str) -> None:
+    """Stop Call Control playback — used for duplex barge-in."""
+    if not call_control_id:
+        return
+    _request("POST", f"/calls/{call_control_id}/actions/playback_stop")
+    logger.info("Telnyx playback stopped", extra={"call_control_id": call_control_id})
+
+
 def is_outbound_call_configured() -> bool:
     settings = get_settings()
     return bool(settings.telnyx_api_key and settings.telnyx_texml_connection_id)

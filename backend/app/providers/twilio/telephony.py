@@ -23,7 +23,13 @@ class TwilioTelephonyProvider(StubProviderMixin, TelephonyProvider):
 
     async def answer_call(self, call_id: str, webhook_response: dict[str, Any]) -> ProviderResult:
         self._require_configured()
-        return stub_result(self.provider_name, call_id)
+        markup = webhook_response.get("texml", "")
+        if not markup:
+            raise ValueError("webhook_response must include texml")
+        from app.voice import twilio_client
+
+        twilio_client.update_call_twiml(call_id, markup)
+        return ProviderResult(provider=self.provider_name, external_id=call_id)
 
     async def outbound_call(
         self,

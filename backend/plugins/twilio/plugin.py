@@ -46,11 +46,13 @@ class TwilioPlugin(TelephonyPlugin):
         registry.register(ProviderService.REGULATORY, self._regulatory)
 
     def register_integrations(self) -> None:
+        from app.integrations.adapters.twilio_duplex import TwilioDuplexMediaAdapter
         from app.integrations.adapters.twilio_stubs import (
             TwilioSmsInboundAdapter,
             TwilioVoiceCallControl,
             TwilioVoiceWebhookAdapter,
         )
+        from app.integrations.registry import register_duplex_adapter
         from app.services.messaging.factory import register_sms_outbound
         from app.services.messaging.twilio_sms import TwilioSmsProvider
 
@@ -58,6 +60,7 @@ class TwilioPlugin(TelephonyPlugin):
         register_voice_webhook("twilio", TwilioVoiceWebhookAdapter)
         register_sms_inbound("twilio", TwilioSmsInboundAdapter)
         register_sms_outbound("twilio", TwilioSmsProvider)
+        register_duplex_adapter("twilio", TwilioDuplexMediaAdapter)
 
 
 def create_plugin() -> TwilioPlugin:

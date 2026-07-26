@@ -15,9 +15,12 @@ from app.config import get_settings
 from app.integrations.adapters.dev_email import DevEmailProvider
 from app.integrations.adapters.resend_email import ResendEmailAdapter
 from app.integrations.adapters.smtp_email import SmtpEmailProvider
+from app.integrations.adapters.telnyx_duplex import TelnyxDuplexMediaAdapter
 from app.integrations.adapters.telnyx_sms_inbound import TelnyxSmsInboundAdapter
 from app.integrations.adapters.telnyx_voice import TelnyxVoiceCallControl
 from app.integrations.adapters.telnyx_webhooks import TelnyxVoiceWebhookAdapter
+from app.integrations.adapters.twilio_duplex import TwilioDuplexMediaAdapter
+from app.integrations.adapters.vonage_duplex import VonageDuplexMediaAdapter
 from app.integrations.adapter_selection import select_adapter
 from app.integrations.contracts import (
     EmailProvider,
@@ -37,6 +40,7 @@ from app.services.messaging.provider import SmsProvider
 from app.services.messaging.telnyx_sms import TelnyxSmsProvider
 from app.services.messaging.twilio_sms import TwilioSmsProvider
 from app.services.messaging.vonage_sms import VonageSmsProvider
+from app.voice.duplex.contracts import DuplexMediaAdapter
 
 _VOICE_CONTROLS: dict[str, type[VoiceCallControl]] = {
     "telnyx": TelnyxVoiceCallControl,
@@ -51,6 +55,11 @@ _EMAIL_PROVIDERS: dict[str, type[EmailProvider]] = {
     "smtp": SmtpEmailProvider,
     "dev": DevEmailProvider,
     "resend": ResendEmailAdapter,
+}
+_DUPLEX_ADAPTERS: dict[str, type[DuplexMediaAdapter]] = {
+    "telnyx": TelnyxDuplexMediaAdapter,
+    "twilio": TwilioDuplexMediaAdapter,
+    "vonage": VonageDuplexMediaAdapter,
 }
 _AI_PROVIDERS = {
     "groq": GroqProvider,
@@ -67,6 +76,16 @@ def register_voice_webhook(name: str, cls: type[VoiceWebhookAdapter]) -> None:
 
 def register_sms_inbound(name: str, cls: type[SmsInboundAdapter]) -> None:
     _SMS_INBOUND[name.lower()] = cls
+
+
+def register_duplex_adapter(name: str, cls: type[DuplexMediaAdapter]) -> None:
+    _DUPLEX_ADAPTERS[name.lower()] = cls
+
+
+@lru_cache
+def _duplex_adapter(name: str) -> DuplexMediaAdapter:
+    cls = _DUPLEX_ADAPTERS[name]
+    return cls()
 
 
 @lru_cache
@@ -128,6 +147,16 @@ def get_sms_inbound_adapter(business: Business | None = None) -> SmsInboundAdapt
     )
 
 
+def get_duplex_media_adapter(business: Business | None = None, db=None) -> DuplexMediaAdapter:
+    """Resolve duplex media adapter from tenant telephony CPaaS (Telnyx, Twilio, Vonage)."""
+    primary = resolve_telephony_adapter_name(business=business, db=db)
+    return select_adapter(
+        {name: lambda n=name: _duplex_adapter(n) for name in _DUPLEX_ADAPTERS},
+        ProviderService.TELEPHONY,
+        primary,
+    )
+
+
 def get_email_provider() -> EmailProvider:
     settings = get_settings()
     name = (settings.email_provider or "auto").lower()
@@ -148,6 +177,7 @@ def list_registered_integrations() -> dict[str, list[str]]:
         "voice_webhook": list(_VOICE_WEBHOOKS.keys()),
         "sms_outbound": list(_SMS_OUTBOUND_PROVIDERS().keys()),
         "sms_inbound": list(_SMS_INBOUND.keys()),
+        "duplex": list(_DUPLEX_ADAPTERS.keys()),
         "email": list(_EMAIL_PROVIDERS.keys()),
     }
 
@@ -163,6 +193,7 @@ def _SMS_OUTBOUND_PROVIDERS() -> dict[str, type[SmsProvider]]:
 
 __all__ = [
     "get_ai_provider",
+    "get_duplex_media_adapter",
     "get_email_provider",
     "get_sms_inbound_adapter",
     "get_sms_provider",
@@ -170,6 +201,7 @@ __all__ = [
     "get_voice_call_control",
     "get_voice_webhook_adapter",
     "list_registered_integrations",
+    "register_duplex_adapter",
     "register_sms_inbound",
     "register_voice_control",
     "register_voice_webhook",

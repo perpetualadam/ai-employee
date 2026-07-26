@@ -10,7 +10,14 @@ from app.voice.voice_stream_service import _collect_final_transcript
 
 
 class _MockSttPlugin:
-    async def transcribe_stream(self, audio_stream, *, language: str = "en-US"):
+    async def transcribe_stream(
+        self,
+        audio_stream,
+        *,
+        language: str = "en-US",
+        encoding: str = "mulaw",
+        sample_rate: int = 8000,
+    ):
         async for _payload in audio_stream:
             yield TranscriptChunk(text="hello there", is_final=True, speaker="caller")
             break

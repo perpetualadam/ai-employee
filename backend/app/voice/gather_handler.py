@@ -15,7 +15,7 @@ from app.voice.gather_prompts import (
     truncated_gather_prompt,
 )
 from app.voice.stt.gather_stt import GatherSpeechSTT
-from app.voice.texml_builder import build_hangup, build_say_and_gather
+from app.voice.voice_markup import get_voice_markup, resolve_voice_markup
 
 
 async def handle_gather_result(
@@ -24,21 +24,22 @@ async def handle_gather_result(
     speech_result: str | None,
     confidence: str | None = None,
 ) -> str:
-    """Process Gather speech result and return next TeXML."""
+    """Process Gather speech result and return next voice markup."""
     call_log = get_call_log(db, call_log_id)
     if call_log is None:
-        return build_hangup("Sorry, this session has expired. Goodbye.")
+        return resolve_voice_markup().build_hangup("Sorry, this session has expired. Goodbye.")
 
     business = db.query(Business).filter(Business.id == call_log.business_id).first()
     if business is None:
-        return build_hangup("Sorry, this business is not available. Goodbye.")
+        return resolve_voice_markup().build_hangup("Sorry, this business is not available. Goodbye.")
 
     settings = get_settings()
+    markup = get_voice_markup(call_log.provider or "telnyx")
 
     trade = resolve_trade_context(business)
 
     if GatherSpeechSTT.is_empty(speech_result):
-        return build_say_and_gather(
+        return markup.build_say_and_gather(
             empty_gather_prompt(call_log, trade),
             settings.public_api_url,
             call_log.id,
@@ -57,7 +58,7 @@ async def handle_gather_result(
             retry_prompt = low_confidence_gather_prompt(call_log, trade)
         else:
             retry_prompt = truncated_gather_prompt(call_log, trade)
-        return build_say_and_gather(
+        return markup.build_say_and_gather(
             retry_prompt,
             settings.public_api_url,
             call_log.id,
@@ -66,5 +67,5 @@ async def handle_gather_result(
         )
 
     speech_text = normalize_caller_speech(chunk.text, business.industry)
-    texml, _ = await process_speech_turn(db, call_log, business, speech_text)
-    return texml
+    response, _ = await process_speech_turn(db, call_log, business, speech_text)
+    return response

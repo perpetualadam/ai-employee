@@ -27,13 +27,43 @@ def _voice_urls(base_url: str, call_log_id: str) -> dict[str, str]:
 
 
 def public_ws_url(path: str) -> str:
-    """Convert PUBLIC_API_URL to a WebSocket URL for Telnyx Stream."""
+    """Convert PUBLIC_API_URL to a WebSocket URL for CPaaS media streams."""
     base = get_settings().public_api_url.rstrip("/")
     if base.startswith("https://"):
         return "wss://" + base.removeprefix("https://") + path
     if base.startswith("http://"):
         return "ws://" + base.removeprefix("http://") + path
     return base + path
+
+
+def duplex_stream_url(call_log_id: str, call_sid: str) -> str:
+    params = urlencode({"call_log_id": call_log_id, "call_sid": call_sid})
+    return public_ws_url(f"/api/v1/voice/duplex/stream?{params}")
+
+
+def media_stream_url(call_log_id: str, call_sid: str) -> str:
+    params = urlencode({"call_log_id": call_log_id, "call_sid": call_sid})
+    return public_ws_url(f"/api/v1/voice/stream?{params}")
+
+
+def build_say_and_duplex(
+    message: str,
+    base_url: str,
+    call_log_id: str,
+    call_sid: str,
+    *,
+    country: str | None = None,
+) -> str:
+    """Start a persistent duplex media session via the tenant telephony CPaaS adapter."""
+    from app.integrations.registry import get_duplex_media_adapter
+
+    adapter = get_duplex_media_adapter()
+    stream_url = duplex_stream_url(call_log_id, call_sid)
+    return adapter.build_session_start_response(
+        greeting=message,
+        stream_url=stream_url,
+        country=country,
+    )
 
 
 def _say(message: str, country: str | None = None) -> str:
@@ -88,12 +118,21 @@ def build_say_and_gather(
 ) -> str:
     """
     Speak the message, play a short beep, then listen for speech.
-    Uses Deepgram stream when VOICE_MODE=stream and streaming is configured.
+    Uses duplex or Deepgram stream when configured; otherwise TeXML gather.
     """
     if call_sid:
         from app.services.voice_mode_service import VoiceModeService
 
-        if VoiceModeService.effective_mode() == "stream":
+        effective = VoiceModeService.effective_mode()
+        if effective == "duplex":
+            return build_say_and_duplex(
+                message,
+                base_url,
+                call_log_id,
+                call_sid,
+                country=country,
+            )
+        if effective == "stream":
             return build_say_and_stream(
                 message,
                 base_url,

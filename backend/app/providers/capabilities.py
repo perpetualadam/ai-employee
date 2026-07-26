@@ -30,6 +30,8 @@ class Capability:
     TEXML = "texml"
     SIP = "sip"
     REALTIME_MEDIA_STREAMS = "realtime_media_streams"
+    DUPLEX_VOICE = "duplex_voice"
+    BARGE_IN = "barge_in"
     RECORDINGS = "recordings"
     TRANSCRIPTIONS = "transcriptions"
     CALL_INSIGHTS = "call_insights"
@@ -61,6 +63,8 @@ _CAPABILITY_FIELDS: dict[str, str] = {
     Capability.TEXML: "texml",
     Capability.SIP: "sip",
     Capability.REALTIME_MEDIA_STREAMS: "realtime_media_streams",
+    Capability.DUPLEX_VOICE: "duplex_voice",
+    Capability.BARGE_IN: "barge_in",
     Capability.RECORDINGS: "recordings",
     Capability.TRANSCRIPTIONS: "transcriptions",
     Capability.CALL_INSIGHTS: "call_insights",
@@ -101,6 +105,8 @@ class ProviderCapabilities:
     texml: bool = False
     sip: bool = False
     realtime_media_streams: bool = False
+    duplex_voice: bool = False
+    barge_in: bool = False
     recordings: bool = False
     transcriptions: bool = False
     call_insights: bool = False

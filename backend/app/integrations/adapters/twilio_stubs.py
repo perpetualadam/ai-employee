@@ -24,7 +24,12 @@ class TwilioVoiceCallControl(VoiceCallControl):
     async def transfer_call(self, call_id: str, to_number: str) -> None:
         if not self.is_configured():
             raise RuntimeError("Twilio voice is not configured")
-        logger.info("Twilio stub transfer", extra={"call_id": call_id, "to": to_number})
+        from app.voice import twilio_client
+        from app.voice.texml_builder import build_transfer_texml
+
+        twiml = build_transfer_texml(to_number)
+        twilio_client.update_call_twiml(call_id, twiml)
+        logger.info("Twilio transfer initiated", extra={"call_id": call_id, "to": to_number})
 
 
 class TwilioVoiceWebhookAdapter(VoiceWebhookAdapter):

@@ -1,6 +1,7 @@
 """Voice call orchestration — ties Telnyx TeXML webhooks to the AI receptionist."""
 
 import logging
+from dataclasses import dataclass
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
@@ -13,15 +14,17 @@ from app.services.tenant import is_valid_uuid
 from app.domain.call import call_has_booking
 from app.domain.phone import normalize_phone
 from app.voice.conversation import is_closing_acknowledgment, is_farewell
-from app.voice.texml_builder import (
-    build_greeting,
-    build_hangup,
-    build_say_and_gather,
-    build_transfer_texml,
-)
+from app.voice.voice_markup import get_voice_markup, resolve_voice_markup
 from app.voice.tts.texml_tts import TeXMLSayTTS
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class DuplexTurnResult:
+    reply: str
+    action: str = "continue"  # continue | hangup | transfer
+    transfer_to: str | None = None
 
 
 def find_business_by_phone(db: Session, to_number: str) -> Business | None:
@@ -103,15 +106,16 @@ async def process_speech_turn(
 ) -> tuple[str, bool]:
     """
     Run one voice conversation turn through the AI receptionist.
-    Returns (texml_response, escalated).
+    Returns (voice_markup_response, escalated).
     """
     settings = get_settings()
     country = business.country
+    markup = get_voice_markup(call_log.provider or "telnyx")
     history: list[dict[str, str]] = list(call_log.conversation_history or [])
 
     if not settings.groq_api_key:
         return (
-            build_hangup(
+            markup.build_hangup(
                 "Sorry, our AI receptionist is temporarily unavailable. Please call back later.",
                 country=country,
             ),
@@ -124,14 +128,14 @@ async def process_speech_turn(
         call_log.status = CallStatus.COMPLETED
         db.commit()
         return (
-            build_hangup("You're welcome! Thank you for calling. Goodbye!", country=country),
+            markup.build_hangup("You're welcome! Thank you for calling. Goodbye!", country=country),
             False,
         )
 
     if is_farewell(speech_text):
         call_log.status = CallStatus.COMPLETED
         db.commit()
-        return (build_hangup("Thank you for calling. Goodbye!", country=country), False)
+        return (markup.build_hangup("Thank you for calling. Goodbye!", country=country), False)
 
     call_id = call_log.id
     try:
@@ -141,7 +145,7 @@ async def process_speech_turn(
         db.rollback()
         logger.exception("Voice AI turn failed", extra={"call_log_id": call_id})
         return (
-            build_hangup(
+            markup.build_hangup(
                 "Sorry, I'm having technical difficulties. Please try again later.",
                 country=country,
             ),
@@ -158,14 +162,14 @@ async def process_speech_turn(
     if call_has_booking(call_log.summary) and is_farewell(speech_text):
         call_log.status = CallStatus.COMPLETED
         db.commit()
-        return (build_hangup(f"{reply} Goodbye!", country=country), False)
+        return (markup.build_hangup(f"{reply} Goodbye!", country=country), False)
 
     if result["escalated"]:
         escalation = business.escalation_phone or business.phone_number
         if escalation:
-            return build_transfer_texml(escalation, country=country), True
+            return markup.build_transfer(escalation, country=country), True
         return (
-            build_hangup(
+            markup.build_hangup(
                 "I've notified our team about your request. Someone will call you back shortly. Goodbye!",
                 country=country,
             ),
@@ -173,7 +177,7 @@ async def process_speech_turn(
         )
 
     return (
-        build_say_and_gather(
+        markup.build_say_and_gather(
             reply,
             settings.public_api_url,
             call_log.id,
@@ -184,9 +188,75 @@ async def process_speech_turn(
     )
 
 
-def handle_inbound_call(db: Session, call_sid: str, from_number: str, to_number: str) -> str:
-    """Create call record and return initial TeXML greeting."""
+async def process_duplex_turn(
+    db: Session,
+    call_log: CallLog,
+    business: Business,
+    speech_text: str,
+) -> DuplexTurnResult:
+    """Run one duplex conversation turn — returns reply text and call action, not TeXML."""
     settings = get_settings()
+    country = business.country
+    history: list[dict[str, str]] = list(call_log.conversation_history or [])
+
+    if not settings.groq_api_key:
+        return DuplexTurnResult(
+            reply="Sorry, our AI receptionist is temporarily unavailable. Please call back later.",
+            action="hangup",
+        )
+
+    if call_has_booking(call_log.summary) and (
+        is_farewell(speech_text) or is_closing_acknowledgment(speech_text)
+    ):
+        call_log.status = CallStatus.COMPLETED
+        db.commit()
+        return DuplexTurnResult(reply="You're welcome! Thank you for calling. Goodbye!", action="hangup")
+
+    if is_farewell(speech_text):
+        call_log.status = CallStatus.COMPLETED
+        db.commit()
+        return DuplexTurnResult(reply="Thank you for calling. Goodbye!", action="hangup")
+
+    call_id = call_log.id
+    try:
+        agent = ReceptionistAgent(db, business, get_ai_provider(), call_log_id=call_id)
+        result = await agent.chat(speech_text, history, voice_mode=True)
+    except Exception:
+        db.rollback()
+        logger.exception("Duplex AI turn failed", extra={"call_log_id": call_id})
+        return DuplexTurnResult(
+            reply="Sorry, I'm having technical difficulties. Please try again later.",
+            action="hangup",
+        )
+
+    reply = TeXMLSayTTS.prepare_for_speech(result["reply"])
+    db.refresh(call_log)
+    call_log.escalated = result["escalated"]
+    if "book_appointment" in result.get("tools_used", []):
+        call_log.summary = "Appointment booked on voice call"
+    db.commit()
+
+    if call_has_booking(call_log.summary) and is_farewell(speech_text):
+        call_log.status = CallStatus.COMPLETED
+        db.commit()
+        return DuplexTurnResult(reply=f"{reply} Goodbye!", action="hangup")
+
+    if result["escalated"]:
+        escalation = business.escalation_phone or business.phone_number
+        if escalation:
+            return DuplexTurnResult(reply=reply, action="transfer", transfer_to=escalation)
+        return DuplexTurnResult(
+            reply="I've notified our team about your request. Someone will call you back shortly. Goodbye!",
+            action="hangup",
+        )
+
+    return DuplexTurnResult(reply=reply, action="continue")
+
+
+def handle_inbound_call(db: Session, call_sid: str, from_number: str, to_number: str) -> str:
+    """Create call record and return initial voice markup greeting."""
+    settings = get_settings()
+    default_markup = resolve_voice_markup()
 
     existing = (
         db.query(CallLog)
@@ -204,7 +274,8 @@ def handle_inbound_call(db: Session, call_sid: str, from_number: str, to_number:
         )
         resume_business = db.query(Business).filter(Business.id == existing.business_id).first()
         resume_country = resume_business.country if resume_business else None
-        return build_say_and_gather(
+        resume_markup = get_voice_markup(existing.provider or default_markup.provider_name)
+        return resume_markup.build_say_and_gather(
             "Sorry about that. After the tone, please continue.",
             settings.public_api_url,
             existing.id,
@@ -216,25 +287,27 @@ def handle_inbound_call(db: Session, call_sid: str, from_number: str, to_number:
 
     if business is None:
         logger.warning("No business for inbound number", extra={"to": to_number})
-        return build_hangup("Sorry, this number is not configured. Goodbye.")
+        return default_markup.build_hangup("Sorry, this number is not configured. Goodbye.")
+
+    business_markup = resolve_voice_markup(business=business, db=db)
 
     from app.services.subscription_service import SubscriptionService
 
     denial = SubscriptionService.get_access_denial_reason(business)
     if denial:
-        return build_hangup(
+        return business_markup.build_hangup(
             "Sorry, this AI receptionist is currently unavailable. Please visit our website to contact us. Goodbye.",
             country=business.country,
         )
 
     if not SubscriptionService.is_within_call_limit(db, business):
-        return build_hangup(
+        return business_markup.build_hangup(
             "Sorry, we're unable to take your call right now. Please try again later or visit our website. Goodbye.",
             country=business.country,
         )
 
     call = create_voice_call(db, business, call_sid, from_number)
-    return build_greeting(business, settings.public_api_url, call.id, call_sid=call_sid)
+    return business_markup.build_greeting(business, settings.public_api_url, call.id, call_sid=call_sid)
 
 
 def handle_call_status(

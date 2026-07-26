@@ -20,6 +20,7 @@ from app.plugins.interfaces import (
     SpeechToTextPlugin,
     StoragePlugin,
     TelephonyPlugin,
+    TextToSpeechPlugin,
     VoicePlugin,
 )
 from app.plugins.loader import PluginLoader
@@ -146,6 +147,9 @@ class PluginManager:
 
     def get_speech_to_text_plugin(self) -> SpeechToTextPlugin | None:
         return self.registry.first_of(SpeechToTextPlugin)
+
+    def get_text_to_speech_plugin(self) -> TextToSpeechPlugin | None:
+        return self.registry.first_of(TextToSpeechPlugin)
 
     def get_email_plugin(self) -> EmailPlugin | None:
         return self.registry.first_of(EmailPlugin)

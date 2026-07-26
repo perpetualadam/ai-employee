@@ -28,8 +28,8 @@ class GatherSpeechSTT:
 
     @staticmethod
     def extract_from_params(params: dict[str, str]) -> tuple[str | None, str | None]:
-        """Read speech or keypad input from Telnyx gather callback parameters."""
-        for key in ("SpeechResult", "UnstableSpeechResult", "speech_result"):
+        """Read speech or keypad input from CPaaS gather callback parameters."""
+        for key in ("SpeechResult", "UnstableSpeechResult", "speech_result", "speech"):
             value = (params.get(key) or "").strip()
             if value:
                 confidence = params.get("Confidence") or params.get("confidence")

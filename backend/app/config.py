@@ -56,7 +56,9 @@ class Settings(BaseSettings):
     email_provider: str = "auto"  # auto | smtp | dev
     public_api_url: str = "http://localhost:8000"
     deepgram_api_key: str = ""
-    voice_mode: str = "gather"  # gather | stream
+    elevenlabs_api_key: str = ""
+    elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
+    voice_mode: str = "gather"  # gather | stream | duplex
     voice_gather_speech_timeout: int = 3  # seconds of silence after speech before Telnyx submits
     voice_gather_timeout: int = 20  # max seconds to wait for caller to start speaking
     stripe_secret_key: str = ""

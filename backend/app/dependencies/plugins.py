@@ -11,6 +11,7 @@ from app.plugins.interfaces import (
     SpeechToTextPlugin,
     StoragePlugin,
     TelephonyPlugin,
+    TextToSpeechPlugin,
     VoicePlugin,
 )
 from app.plugins.manager import get_plugin_manager
@@ -40,6 +41,10 @@ def get_storage_plugin_dep() -> StoragePlugin | None:
 
 def get_speech_to_text_plugin() -> SpeechToTextPlugin | None:
     return get_plugin_manager().get_speech_to_text_plugin()
+
+
+def get_text_to_speech_plugin() -> TextToSpeechPlugin | None:
+    return get_plugin_manager().get_text_to_speech_plugin()
 
 
 def get_email_plugin() -> EmailPlugin | None:

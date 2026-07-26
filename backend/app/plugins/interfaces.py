@@ -103,8 +103,22 @@ class SpeechToTextPlugin(BasePlugin):
         audio_stream: AsyncIterator[bytes],
         *,
         language: str = "en-US",
+        encoding: str = "mulaw",
+        sample_rate: int = 8000,
     ) -> AsyncIterator[TranscriptChunk]:
         ...
+
+
+class TextToSpeechPlugin(BasePlugin):
+    @abstractmethod
+    async def synthesize(
+        self,
+        text: str,
+        *,
+        language: str = "en-US",
+        output_format: str | None = None,
+    ) -> bytes:
+        """Return audio bytes for playback (format driven by output_format / provider)."""
 
 
 class EmailPlugin(BasePlugin):

@@ -49,8 +49,10 @@ class TelnyxPlugin(TelephonyPlugin):
 
     def register_integrations(self) -> None:
         from app.integrations.adapters.telnyx_sms_inbound import TelnyxSmsInboundAdapter
+        from app.integrations.adapters.telnyx_duplex import TelnyxDuplexMediaAdapter
         from app.integrations.adapters.telnyx_voice import TelnyxVoiceCallControl
         from app.integrations.adapters.telnyx_webhooks import TelnyxVoiceWebhookAdapter
+        from app.integrations.registry import register_duplex_adapter
         from app.services.messaging.factory import register_sms_outbound
         from app.services.messaging.telnyx_sms import TelnyxSmsProvider
 
@@ -58,6 +60,7 @@ class TelnyxPlugin(TelephonyPlugin):
         register_voice_webhook("telnyx", TelnyxVoiceWebhookAdapter)
         register_sms_inbound("telnyx", TelnyxSmsInboundAdapter)
         register_sms_outbound("telnyx", TelnyxSmsProvider)
+        register_duplex_adapter("telnyx", TelnyxDuplexMediaAdapter)
 
     def health(self) -> dict[str, Any]:
         data = super().health()
