@@ -3,8 +3,12 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 
+import {
+  CustomerChatSkeleton,
+  CustomerErrorState,
+} from "@/components/customer/customer-shell";
 import { CustomerChat } from "@/components/customer-chat";
-import { api, ApiError, ChatMessage } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 
 export default function PublicChatPage() {
   const params = useParams();
@@ -26,18 +30,17 @@ export default function PublicChatPage() {
   }, [slug]);
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center text-muted-foreground">
-        Loading…
-      </div>
-    );
+    return <CustomerChatSkeleton />;
   }
 
   if (error) {
     return (
-      <div className="flex min-h-screen items-center justify-center p-4 text-center text-muted-foreground">
-        {error}
-      </div>
+      <CustomerErrorState
+        title="Chat unavailable"
+        message={error}
+        actionLabel="Learn about AI Employee"
+        actionHref="/"
+      />
     );
   }
 

@@ -1,16 +1,15 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { ArrowRight, Check, Loader2, MapPin } from "lucide-react";
 import { useParams } from "next/navigation";
 
-import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  CustomerErrorState,
+  CustomerFormSkeleton,
+  CustomerShell,
+} from "@/components/customer/customer-shell";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, AddressConfirmInfo } from "@/lib/api";
@@ -48,59 +47,108 @@ export default function ConfirmAddressPage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
-        <p className="text-muted-foreground">Loading...</p>
-      </div>
-    );
+    return <CustomerFormSkeleton />;
   }
 
   if (error && !info) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
-        <Card className="w-full max-w-md">
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">{error}</CardContent>
-        </Card>
-      </div>
+      <CustomerErrorState
+        title="Link unavailable"
+        message={error}
+        actionLabel="Go to homepage"
+        actionHref="/"
+      />
     );
   }
 
+  const confirmed = info?.already_confirmed || done;
+  const displayAddress = done ? address : info?.confirmed_address;
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>Confirm service address</CardTitle>
-          <CardDescription>
-            {info?.business_name}
-            {info?.customer_name ? ` · ${info.customer_name}` : ""}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {info?.already_confirmed || done ? (
-            <p className="text-sm">
-              Thank you! Your address
-              {info?.confirmed_address ? ` (${info.confirmed_address})` : ""} is confirmed.
-            </p>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="address">Full US service address</Label>
-                <Input
-                  id="address"
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  placeholder="123 Main St, Springfield, IL 62701"
-                  required
-                />
+    <CustomerShell
+      businessName={info?.business_name ?? "Service request"}
+      description={
+        info?.customer_name
+          ? `Confirm address for ${info.customer_name}`
+          : "Confirm your service address"
+      }
+      badge="Address confirm"
+    >
+      <div className="mx-auto w-full max-w-md animate-in fade-in duration-300">
+        <div className="overflow-hidden rounded-xl border border-border/80 bg-card shadow-sm">
+          <div className="border-b border-border/60 bg-muted/20 px-6 py-5">
+            <div className="flex items-start gap-4">
+              <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                {confirmed ? (
+                  <Check className="size-5" aria-hidden />
+                ) : (
+                  <MapPin className="size-5" aria-hidden />
+                )}
               </div>
-              {error && <p className="text-sm text-destructive">{error}</p>}
-              <Button type="submit" className="w-full" disabled={submitting}>
-                {submitting ? "Saving..." : "Confirm address"}
-              </Button>
-            </form>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+              <div>
+                <h1 className="font-heading text-xl font-semibold">
+                  {confirmed ? "Address confirmed" : "Confirm service address"}
+                </h1>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {confirmed
+                    ? "You're all set — we'll use this address for your appointment."
+                    : "Enter the full address where service is needed."}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="px-6 py-6">
+            {confirmed ? (
+              <div className="rounded-xl border border-success/30 bg-success/5 px-4 py-4 text-sm">
+                <p className="font-medium text-foreground">Thank you!</p>
+                <p className="mt-2 text-muted-foreground">
+                  Your address{displayAddress ? ` (${displayAddress})` : ""} is confirmed.
+                  You can close this page.
+                </p>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-5">
+                <div className="space-y-2">
+                  <Label htmlFor="address">Full service address</Label>
+                  <Input
+                    id="address"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    placeholder="123 Main St, Springfield, IL 62701"
+                    required
+                    autoComplete="street-address"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Include street, city, state, and ZIP so our team can find you.
+                  </p>
+                </div>
+                {error && (
+                  <p
+                    className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+                    role="alert"
+                  >
+                    {error}
+                  </p>
+                )}
+                <Button type="submit" className="w-full" disabled={submitting}>
+                  {submitting ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      Confirm address
+                      <ArrowRight className="size-4" />
+                    </>
+                  )}
+                </Button>
+              </form>
+            )}
+          </div>
+        </div>
+      </div>
+    </CustomerShell>
   );
 }

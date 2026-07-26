@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { CopySnippet } from "@/components/copy-snippet";
-import { DashboardShell } from "@/components/dashboard/shell";
+import { PageHeader } from "@/components/dashboard/page-header";
+import { TablePageSkeleton } from "@/components/dashboard/page-skeletons";
 import { PhoneProvisioningPanel } from "@/components/phone-provisioning-panel";
 import { ProviderConfigPanel } from "@/components/provider-config-panel";
 import { TimezoneSelect } from "@/components/timezone-select";
@@ -21,7 +22,7 @@ import { useDashboardAuth } from "@/hooks/use-dashboard-auth";
 import { api, ApiError } from "@/lib/api";
 
 export default function SettingsPage() {
-  const { businessName, business, loading: authLoading, refreshBusiness } = useDashboardAuth();
+  const { business, loading: authLoading, refreshBusiness } = useDashboardAuth();
   const [form, setForm] = useState({
     name: "",
     escalation_phone: "",
@@ -129,20 +130,15 @@ export default function SettingsPage() {
   }, [publicChatUrl, business?.name]);
 
   if (authLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-muted-foreground">Loading...</p>
-      </div>
-    );
+    return <TablePageSkeleton />;
   }
 
   return (
-    <DashboardShell businessName={businessName}>
-      <div className="mx-auto max-w-2xl space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-          <p className="text-muted-foreground">Business profile and voice setup</p>
-        </div>
+    <div className="mx-auto max-w-2xl space-y-6 animate-in fade-in duration-300">
+      <PageHeader
+        title="Settings"
+        description="Business profile, phone line, and integrations"
+      />
 
         <Card>
           <CardHeader>
@@ -323,7 +319,6 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
-      </div>
-    </DashboardShell>
+    </div>
   );
 }

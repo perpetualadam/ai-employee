@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { DashboardShell } from "@/components/dashboard/shell";
+import { PageHeader } from "@/components/dashboard/page-header";
+import { TablePageSkeleton } from "@/components/dashboard/page-skeletons";
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -50,7 +51,7 @@ const emptyForm: JobInput = {
 };
 
 export default function JobsPage() {
-  const { businessName, business, loading: authLoading } = useDashboardAuth();
+  const { business, loading: authLoading } = useDashboardAuth();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [statusFilter, setStatusFilter] = useState("");
@@ -134,23 +135,17 @@ export default function JobsPage() {
   }
 
   if (authLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-muted-foreground">Loading...</p>
-      </div>
-    );
+    return <TablePageSkeleton />;
   }
 
   return (
-    <DashboardShell businessName={businessName}>
-      <div className="space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Jobs</h1>
-            <p className="text-muted-foreground">Track work orders and job status</p>
-          </div>
-          <Button onClick={openCreate}>Add job</Button>
-        </div>
+    <>
+      <div className="space-y-6 animate-in fade-in duration-300">
+        <PageHeader
+          title="Jobs"
+          description="Track work orders and job status"
+          actions={<Button onClick={openCreate}>Add job</Button>}
+        />
 
         <Card>
           <CardHeader>
@@ -301,6 +296,6 @@ export default function JobsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </DashboardShell>
+    </>
   );
 }

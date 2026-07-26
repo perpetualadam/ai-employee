@@ -2,7 +2,8 @@
 
 import { useCallback, useState } from "react";
 
-import { DashboardShell } from "@/components/dashboard/shell";
+import { PageHeader } from "@/components/dashboard/page-header";
+import { TablePageSkeleton } from "@/components/dashboard/page-skeletons";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -43,7 +44,7 @@ type ManagementResponse = {
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
 
 export default function AdminProvidersPage() {
-  const { businessName, loading: authLoading } = useDashboardAuth();
+  const { loading: authLoading } = useDashboardAuth();
   const [adminSecret, setAdminSecret] = useState("");
   const [data, setData] = useState<ManagementResponse | null>(null);
   const [error, setError] = useState("");
@@ -90,33 +91,24 @@ export default function AdminProvidersPage() {
   }
 
   if (authLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-muted-foreground">Loading...</p>
-      </div>
-    );
+    return <TablePageSkeleton />;
   }
 
   if (!adminEnabled) {
     return (
-      <DashboardShell businessName={businessName}>
-        <div className="mx-auto max-w-xl py-16 text-center">
-          <h1 className="text-2xl font-bold tracking-tight">Not found</h1>
-          <p className="mt-2 text-muted-foreground">This page is not available.</p>
-        </div>
-      </DashboardShell>
+      <div className="mx-auto max-w-xl py-16 text-center">
+        <h1 className="font-heading text-2xl font-semibold tracking-tight">Not found</h1>
+        <p className="mt-2 text-muted-foreground">This page is not available.</p>
+      </div>
     );
   }
 
   return (
-    <DashboardShell businessName={businessName}>
-      <div className="mx-auto max-w-4xl space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Provider management</h1>
-          <p className="text-muted-foreground">
-            Installed telecom providers, capabilities, health, and metrics
-          </p>
-        </div>
+    <div className="mx-auto max-w-4xl space-y-6 animate-in fade-in duration-300">
+      <PageHeader
+        title="Provider management"
+        description="Installed telecom providers, capabilities, health, and metrics"
+      />
 
         <Card>
           <CardHeader>
@@ -194,7 +186,6 @@ export default function AdminProvidersPage() {
             ) : null}
           </>
         ) : null}
-      </div>
-    </DashboardShell>
+    </div>
   );
 }

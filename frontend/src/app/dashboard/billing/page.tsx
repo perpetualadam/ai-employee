@@ -3,7 +3,8 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
-import { DashboardShell } from "@/components/dashboard/shell";
+import { PageHeader } from "@/components/dashboard/page-header";
+import { TablePageSkeleton } from "@/components/dashboard/page-skeletons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,7 +38,7 @@ function UsageBar({ used, limit, label }: { used: number; limit: number; label: 
 }
 
 function BillingContent() {
-  const { businessName, loading: authLoading } = useDashboardAuth();
+  const { loading: authLoading } = useDashboardAuth();
   const searchParams = useSearchParams();
   const [billing, setBilling] = useState<BillingStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -88,18 +89,12 @@ function BillingContent() {
   }
 
   if (authLoading || loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-muted-foreground">Loading...</p>
-      </div>
-    );
+    return <TablePageSkeleton />;
   }
 
   if (!billing) {
     return (
-      <DashboardShell businessName={businessName}>
-        <p className="text-destructive">{error || "Unable to load billing"}</p>
-      </DashboardShell>
+      <p className="text-destructive">{error || "Unable to load billing"}</p>
     );
   }
 
@@ -107,12 +102,11 @@ function BillingContent() {
     billing.is_active ? "secondary" : billing.subscription_status === "past_due" ? "destructive" : "outline";
 
   return (
-    <DashboardShell businessName={businessName}>
-      <div className="mx-auto max-w-3xl space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Billing</h1>
-          <p className="text-muted-foreground">Manage your subscription and usage</p>
-        </div>
+    <div className="mx-auto max-w-3xl space-y-6 animate-in fade-in duration-300">
+      <PageHeader
+        title="Billing"
+        description="Manage your subscription and usage"
+      />
 
         {success && (
           <p className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
@@ -252,8 +246,7 @@ function BillingContent() {
         )}
 
         {error && <p className="text-sm text-destructive">{error}</p>}
-      </div>
-    </DashboardShell>
+    </div>
   );
 }
 

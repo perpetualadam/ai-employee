@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
-import { DashboardShell } from "@/components/dashboard/shell";
+import { PageHeader } from "@/components/dashboard/page-header";
+import { InboxSkeleton } from "@/components/dashboard/page-skeletons";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -22,7 +23,7 @@ export default function ConversationDetailPage() {
   const router = useRouter();
   const params = useParams();
   const id = params.id as string;
-  const { businessName, business, loading: authLoading } = useDashboardAuth();
+  const { business, loading: authLoading } = useDashboardAuth();
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [calling, setCalling] = useState(false);
@@ -40,11 +41,7 @@ export default function ConversationDetailPage() {
   const tz = business?.timezone;
 
   if (authLoading || loading || !detail) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-muted-foreground">Loading conversation...</p>
-      </div>
-    );
+    return <InboxSkeleton />;
   }
 
   const conversation = detail;
@@ -68,24 +65,19 @@ export default function ConversationDetailPage() {
   }
 
   return (
-    <DashboardShell businessName={businessName}>
-      <div className="space-y-6">
-        <div className="flex items-center gap-3">
+    <div className="space-y-6 animate-in fade-in duration-300">
+      <PageHeader
+        title={lead.customer_name || detail.caller_phone || "Conversation"}
+        description={`${detail.channel_label} · ${formatDateTime(detail.created_at, tz)}`}
+        actions={
           <Link
             href="/dashboard/conversations"
             className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
           >
             Back to inbox
           </Link>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">
-              {lead.customer_name || detail.caller_phone || "Conversation"}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {detail.channel_label} · {formatDateTime(detail.created_at, tz)}
-            </p>
-          </div>
-        </div>
+        }
+      />
 
         <Card>
           <CardHeader>
@@ -174,7 +166,6 @@ export default function ConversationDetailPage() {
             </CardContent>
           </Card>
         )}
-      </div>
-    </DashboardShell>
+    </div>
   );
 }

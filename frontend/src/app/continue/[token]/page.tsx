@@ -3,6 +3,10 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 
+import {
+  CustomerChatSkeleton,
+  CustomerErrorState,
+} from "@/components/customer/customer-shell";
 import { CustomerChat } from "@/components/customer-chat";
 import { api, ApiError, ChatMessage } from "@/lib/api";
 
@@ -24,24 +28,25 @@ export default function ContinueChatPage() {
         setInitialMessages(info.messages as ChatMessage[]);
       })
       .catch((err) => {
-        setError(err instanceof ApiError ? err.message : "This link is invalid or has expired.");
+        setError(
+          err instanceof ApiError ? err.message : "This link is invalid or has expired.",
+        );
       })
       .finally(() => setLoading(false));
   }, [token]);
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center text-muted-foreground">
-        Loading…
-      </div>
-    );
+    return <CustomerChatSkeleton />;
   }
 
   if (error) {
     return (
-      <div className="flex min-h-screen items-center justify-center p-4 text-center text-muted-foreground">
-        {error}
-      </div>
+      <CustomerErrorState
+        title="Link expired"
+        message={error}
+        actionLabel="Go to homepage"
+        actionHref="/"
+      />
     );
   }
 

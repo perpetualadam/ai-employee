@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { DashboardShell } from "@/components/dashboard/shell";
+import { PageHeader } from "@/components/dashboard/page-header";
+import { TablePageSkeleton } from "@/components/dashboard/page-skeletons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,7 +39,7 @@ function todayIsoDate() {
 }
 
 export default function CalendarPage() {
-  const { businessName, business, loading: authLoading } = useDashboardAuth();
+  const { business, loading: authLoading } = useDashboardAuth();
   const [selectedDate, setSelectedDate] = useState(todayIsoDate());
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -195,22 +196,16 @@ export default function CalendarPage() {
   const someSelected = selectedIds.size > 0 && !allSelected;
 
   if (authLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-muted-foreground">Loading...</p>
-      </div>
-    );
+    return <TablePageSkeleton />;
   }
 
   return (
-    <DashboardShell businessName={businessName}>
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Calendar</h1>
-          <p className="text-muted-foreground">
-            Book, reschedule, and cancel appointments
-          </p>
-        </div>
+    <>
+      <div className="space-y-6 animate-in fade-in duration-300">
+        <PageHeader
+          title="Calendar"
+          description="Book, reschedule, and cancel appointments"
+        />
 
         <div className="flex flex-wrap items-end gap-4">
           <div className="space-y-2">
@@ -447,6 +442,6 @@ export default function CalendarPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </DashboardShell>
+    </>
   );
 }

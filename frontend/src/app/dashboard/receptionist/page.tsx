@@ -2,7 +2,8 @@
 
 import { useRef, useState } from "react";
 
-import { DashboardShell } from "@/components/dashboard/shell";
+import { PageHeader } from "@/components/dashboard/page-header";
+import { TablePageSkeleton } from "@/components/dashboard/page-skeletons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,7 +20,7 @@ import { api, ApiError, ChatMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export default function ReceptionistPage() {
-  const { businessName, loading: authLoading } = useDashboardAuth();
+  const { loading: authLoading } = useDashboardAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -82,27 +83,20 @@ export default function ReceptionistPage() {
   }
 
   if (authLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-muted-foreground">Loading...</p>
-      </div>
-    );
+    return <TablePageSkeleton />;
   }
 
   return (
-    <DashboardShell businessName={businessName}>
-      <div className="space-y-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">AI Receptionist</h1>
-            <p className="text-muted-foreground">
-              Preview how customers experience your receptionist
-            </p>
-          </div>
+    <div className="space-y-6 animate-in fade-in duration-300">
+      <PageHeader
+        title="AI Receptionist"
+        description="Preview how customers experience your receptionist"
+        actions={
           <Button variant="outline" onClick={handleNewSession}>
             New conversation
           </Button>
-        </div>
+        }
+      />
 
         <div className="grid gap-6 lg:grid-cols-3">
           <Card className="lg:col-span-2">
@@ -234,7 +228,6 @@ export default function ReceptionistPage() {
             </Card>
           </div>
         </div>
-      </div>
-    </DashboardShell>
+    </div>
   );
 }

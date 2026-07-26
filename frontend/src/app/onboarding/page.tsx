@@ -1,9 +1,19 @@
 "use client";
 
 import Link from "next/link";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  Loader2,
+  PhoneCall,
+} from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+import { OnboardingProgress, onboardingSteps } from "@/components/onboarding/onboarding-progress";
+import { OnboardingShell } from "@/components/onboarding/onboarding-shell";
+import { OnboardingSkeleton } from "@/components/onboarding/onboarding-skeleton";
 import { PhoneProvisioningPanel } from "@/components/phone-provisioning-panel";
 import { TimezoneSelect } from "@/components/timezone-select";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -16,16 +26,21 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { api, ApiError, Business, CountryOption, TradeOption } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-const STEPS = [
-  { title: "Welcome", description: "Let's set up your AI employee" },
-  { title: "Business", description: "Tell us about your company" },
-  { title: "Services", description: "What jobs do you take?" },
-  { title: "Phone", description: "Connect your phone line" },
-  { title: "Go live", description: "Test and launch" },
+const welcomePoints = [
+  "14-day free trial included",
+  "No credit card required to start",
+  "Works with your existing phone number",
 ];
 
 function OnboardingWizard() {
@@ -51,6 +66,8 @@ function OnboardingWizard() {
     escalation_phone: "",
     ai_instructions: "",
   });
+
+  const StepIcon = onboardingSteps[step]?.icon;
 
   function applyCountryDefaults(countryCode: string, countryList: CountryOption[]) {
     const match = countryList.find((c) => c.code === countryCode);
@@ -97,6 +114,16 @@ function OnboardingWizard() {
 
   const selectedTrade =
     trades.find((t) => t.value === form.industry) ?? null;
+
+  const tradeOptions =
+    trades.length > 0
+      ? trades
+      : [{ value: form.industry, label: form.industry, services: [], emergency_rules: [] }];
+
+  const countryOptions =
+    countries.length > 0
+      ? countries
+      : [{ code: form.country, label: form.country }];
 
   function goToStep(n: number) {
     router.push(`/onboarding?step=${n}`);
@@ -185,73 +212,62 @@ function OnboardingWizard() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-muted-foreground">Loading...</p>
-      </div>
+      <OnboardingShell>
+        <OnboardingSkeleton />
+      </OnboardingShell>
     );
   }
 
   return (
-    <div className="min-h-screen bg-muted/30">
-      <header className="border-b bg-background">
-        <div className="mx-auto flex h-16 max-w-3xl items-center justify-between px-4">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-xs font-bold text-primary-foreground">
-              AI
-            </div>
-            <span className="font-semibold">Setup wizard</span>
-          </div>
-          <Link href="/dashboard" className="text-sm text-muted-foreground hover:text-foreground">
-            Skip for now
-          </Link>
-        </div>
-      </header>
+    <OnboardingShell>
+      <div className="space-y-8 animate-in fade-in duration-300">
+        <OnboardingProgress currentStep={step} />
 
-      <div className="mx-auto max-w-3xl px-4 py-8">
-        {/* Progress */}
-        <div className="mb-8 flex gap-2">
-          {STEPS.map((s, i) => (
-            <div key={s.title} className="flex-1">
-              <div
-                className={cn(
-                  "h-1.5 rounded-full",
-                  i <= step ? "bg-primary" : "bg-muted",
-                )}
-              />
-              <p className="mt-2 hidden text-xs text-muted-foreground sm:block">{s.title}</p>
+        <Card className="overflow-hidden border-border/80 shadow-sm">
+          <CardHeader className="border-b border-border/60 bg-muted/20">
+            <div className="flex items-start gap-4">
+              {StepIcon && (
+                <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <StepIcon className="size-5" aria-hidden />
+                </div>
+              )}
+              <div>
+                <CardTitle className="font-heading text-xl">
+                  {onboardingSteps[step].title}
+                </CardTitle>
+                <CardDescription className="mt-1">
+                  {onboardingSteps[step].description}
+                </CardDescription>
+              </div>
             </div>
-          ))}
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>{STEPS[step].title}</CardTitle>
-            <CardDescription>{STEPS[step].description}</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-6 pt-6">
             {step === 0 && (
-              <div className="space-y-4">
-                <p className="text-muted-foreground">
-                  In the next few minutes you&apos;ll configure your AI receptionist to answer calls,
-                  book jobs, and update your CRM — just like a real employee.
+              <div className="space-y-6">
+                <p className="leading-relaxed text-muted-foreground">
+                  In the next few minutes you&apos;ll configure your AI receptionist to
+                  answer calls, book jobs, and update your CRM — just like a real
+                  employee.
                 </p>
-                <ul className="space-y-2 text-sm">
-                  <li className="flex gap-2">
-                    <span className="text-primary">✓</span> 14-day free trial included
-                  </li>
-                  <li className="flex gap-2">
-                    <span className="text-primary">✓</span> No credit card required to start
-                  </li>
-                  <li className="flex gap-2">
-                    <span className="text-primary">✓</span> Works with your existing phone number
-                  </li>
+                <ul className="space-y-3">
+                  {welcomePoints.map((point) => (
+                    <li key={point} className="flex items-center gap-3 text-sm">
+                      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-success/10 text-success">
+                        <Check className="size-3.5" aria-hidden />
+                      </span>
+                      {point}
+                    </li>
+                  ))}
                 </ul>
-                <Button onClick={() => goToStep(1)}>Get started</Button>
+                <Button onClick={() => goToStep(1)} className="w-full sm:w-auto">
+                  Get started
+                  <ArrowRight className="size-4" />
+                </Button>
               </div>
             )}
 
             {step === 1 && (
-              <div className="space-y-4">
+              <div className="space-y-5">
                 <div className="space-y-2">
                   <Label htmlFor="biz-name">Business name</Label>
                   <Input
@@ -263,85 +279,134 @@ function OnboardingWizard() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="industry">Trade</Label>
-                  <select
-                    id="industry"
+                  <Select
                     value={form.industry}
-                    onChange={(e) => setForm({ ...form, industry: e.target.value })}
-                    className="h-8 w-full rounded-lg border border-input bg-background px-2 text-sm"
+                    onValueChange={(value) =>
+                      setForm({ ...form, industry: value ?? form.industry })
+                    }
                   >
-                    {(trades.length ? trades : [{ value: form.industry, label: form.industry, services: [], emergency_rules: [] }]).map(
-                      (i) => (
-                        <option key={i.value} value={i.value}>
-                          {i.label}
-                        </option>
-                      ),
-                    )}
-                  </select>
+                    <SelectTrigger id="industry" className="w-full">
+                      <SelectValue placeholder="Select your trade" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {tradeOptions.map((trade) => (
+                        <SelectItem key={trade.value} value={trade.value}>
+                          {trade.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="country">Country</Label>
-                  <select
-                    id="country"
+                  <Select
                     value={form.country}
-                    onChange={(e) =>
+                    onValueChange={(value) => {
+                      if (!value) return;
                       setForm((prev) => ({
                         ...prev,
-                        ...applyCountryDefaults(e.target.value, countries),
-                      }))
-                    }
-                    className="h-8 w-full rounded-lg border border-input bg-background px-2 text-sm"
+                        ...applyCountryDefaults(value, countries),
+                      }));
+                    }}
                   >
-                    {(countries.length ? countries : [{ code: form.country, label: form.country }]).map(
-                      (c) => (
-                        <option key={c.code} value={c.code}>
-                          {c.label}
-                        </option>
-                      ),
-                    )}
-                  </select>
+                    <SelectTrigger id="country" className="w-full">
+                      <SelectValue placeholder="Select country" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {countryOptions.map((country) => (
+                        <SelectItem key={country.code} value={country.code}>
+                          {country.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <p className="text-xs text-muted-foreground">
-                    Sets address format, phone rules, and regional compliance for your trade.
+                    Sets address format, phone rules, and regional compliance for your
+                    trade.
                   </p>
                 </div>
                 <TimezoneSelect
                   id="tz"
                   value={form.timezone}
                   onChange={(timezone) => setForm({ ...form, timezone })}
-                  hint="Auto-filled when you pick a country — adjust if your shop is in a different timezone (e.g. Arizona or Western Australia)."
+                  hint="Auto-filled when you pick a country — adjust if your shop is in a different timezone."
                 />
-                <Button onClick={handleStep1Next} disabled={saving}>
-                  {saving ? "Saving..." : "Continue"}
-                </Button>
+                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => goToStep(0)}
+                  >
+                    <ArrowLeft className="size-4" />
+                    Back
+                  </Button>
+                  <Button onClick={handleStep1Next} disabled={saving}>
+                    {saving ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        Continue
+                        <ArrowRight className="size-4" />
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             )}
 
             {step === 2 && (
-              <div className="space-y-4">
+              <div className="space-y-5">
                 <p className="text-sm text-muted-foreground">
-                  We&apos;ll add common services for your trade. The AI uses these when booking
-                  appointments and quoting jobs.
+                  We&apos;ll add common services for your trade. The AI uses these when
+                  booking appointments and quoting jobs.
                 </p>
-                <ul className="rounded-lg border p-4 text-sm space-y-2">
+                <ul className="space-y-2 rounded-xl border border-border/80 bg-muted/20 p-4 text-sm">
                   {(selectedTrade?.services ?? ["General service call"]).map((svc) => (
-                    <li key={svc}>• {svc}</li>
+                    <li key={svc} className="flex items-center gap-2">
+                      <Check className="size-3.5 shrink-0 text-success" aria-hidden />
+                      {svc}
+                    </li>
                   ))}
                 </ul>
                 {selectedTrade && selectedTrade.emergency_rules.length > 0 && (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
                     Emergency rules: {selectedTrade.emergency_rules.join(", ")}
                   </p>
                 )}
                 <p className="text-sm text-muted-foreground">
                   You can add more services later in Settings.
                 </p>
-                <Button onClick={handleStep2Next} disabled={saving}>
-                  {saving ? "Adding services..." : "Add default services"}
-                </Button>
+                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => goToStep(1)}
+                  >
+                    <ArrowLeft className="size-4" />
+                    Back
+                  </Button>
+                  <Button onClick={handleStep2Next} disabled={saving}>
+                    {saving ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" />
+                        Adding services...
+                      </>
+                    ) : (
+                      <>
+                        Add default services
+                        <ArrowRight className="size-4" />
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             )}
 
             {step === 3 && (
-              <div className="space-y-4">
+              <div className="space-y-5">
                 <PhoneProvisioningPanel
                   business={business}
                   onPhoneUpdated={(updated) => setBusiness(updated)}
@@ -352,62 +417,118 @@ function OnboardingWizard() {
                   <Input
                     id="escalation"
                     value={form.escalation_phone}
-                    onChange={(e) => setForm({ ...form, escalation_phone: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, escalation_phone: e.target.value })
+                    }
                     placeholder="+15559876543"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Urgent calls transfer here.
+                    Urgent calls transfer here when the AI escalates to a human.
                   </p>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="instructions">Special instructions for AI (optional)</Label>
+                  <Label htmlFor="instructions">
+                    Special instructions for AI (optional)
+                  </Label>
                   <Textarea
                     id="instructions"
                     value={form.ai_instructions}
-                    onChange={(e) => setForm({ ...form, ai_instructions: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, ai_instructions: e.target.value })
+                    }
                     placeholder="e.g. We don't work on Sundays. Always ask about warranty status."
                     rows={3}
                   />
                 </div>
-                <Button onClick={handleStep3Next} disabled={saving}>
-                  {saving ? "Saving..." : "Continue"}
-                </Button>
-              </div>
-            )}
-
-            {step === 4 && (
-              <div className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  Your AI receptionist is configured. Test it with a practice conversation, then
-                  call your business number to hear it live.
-                </p>
-                <div className="rounded-lg border bg-muted/50 p-4 text-sm space-y-2">
-                  <p className="font-medium">First-call checklist</p>
-                  <ul className="space-y-1 text-muted-foreground">
-                    <li>1. Test the AI in the receptionist simulator</li>
-                    <li>2. Call your business number and book a test appointment</li>
-                    <li>3. Check the appointment appears in Calendar</li>
-                  </ul>
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  <Link
-                    href="/dashboard/receptionist"
-                    className={buttonVariants({ variant: "outline" })}
+                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => goToStep(2)}
                   >
-                    Test AI receptionist
-                  </Link>
-                  <Button onClick={handleComplete} disabled={saving}>
-                    {saving ? "Finishing..." : "Finish setup"}
+                    <ArrowLeft className="size-4" />
+                    Back
+                  </Button>
+                  <Button onClick={handleStep3Next} disabled={saving}>
+                    {saving ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        Continue
+                        <ArrowRight className="size-4" />
+                      </>
+                    )}
                   </Button>
                 </div>
               </div>
             )}
 
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            {step === 4 && (
+              <div className="space-y-5">
+                <p className="text-sm text-muted-foreground">
+                  Your AI receptionist is configured. Test it with a practice
+                  conversation, then call your business number to hear it live.
+                </p>
+                <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm">
+                  <p className="flex items-center gap-2 font-medium">
+                    <PhoneCall className="size-4 text-primary" aria-hidden />
+                    First-call checklist
+                  </p>
+                  <ol className="mt-3 space-y-2 text-muted-foreground">
+                    <li>1. Test the AI in the receptionist simulator</li>
+                    <li>2. Call your business number and book a test appointment</li>
+                    <li>3. Check the appointment appears in Calendar</li>
+                  </ol>
+                </div>
+                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => goToStep(3)}
+                  >
+                    <ArrowLeft className="size-4" />
+                    Back
+                  </Button>
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    <Link
+                      href="/dashboard/receptionist"
+                      className={cn(buttonVariants({ variant: "outline" }), "justify-center")}
+                    >
+                      Test AI receptionist
+                    </Link>
+                    <Button onClick={handleComplete} disabled={saving}>
+                      {saving ? (
+                        <>
+                          <Loader2 className="size-4 animate-spin" />
+                          Finishing...
+                        </>
+                      ) : (
+                        <>
+                          Finish setup
+                          <ArrowRight className="size-4" />
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <p
+                className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+                role="alert"
+              >
+                {error}
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>
-    </div>
+    </OnboardingShell>
   );
 }
 
@@ -415,9 +536,9 @@ export default function OnboardingPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-screen items-center justify-center">
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
+        <OnboardingShell>
+          <OnboardingSkeleton />
+        </OnboardingShell>
       }
     >
       <OnboardingWizard />
