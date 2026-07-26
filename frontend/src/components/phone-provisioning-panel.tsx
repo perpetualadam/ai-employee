@@ -12,6 +12,8 @@ import {
   Business,
   PhoneProvisioningStatus,
 } from "@/lib/api";
+import { phoneSearchHint, telnyxBackendHint } from "@/lib/phone-search-hints";
+import { VerificationPanel } from "@/components/verification-panel";
 
 type PhoneProvisioningPanelProps = {
   business: Business | null;
@@ -31,8 +33,12 @@ export function PhoneProvisioningPanel({
   const [prefixExample, setPrefixExample] = useState("");
   const [prefixSupported, setPrefixSupported] = useState(true);
   const [examplePhone, setExamplePhone] = useState("+15551234567");
+  const [numberType, setNumberType] = useState<string>("");
+  const [numberTypeOptions, setNumberTypeOptions] = useState<
+    { value: string; label: string }[]
+  >([]);
+  const [manualPhone, setManualPhone] = useState("");
   const [results, setResults] = useState<AvailablePhoneNumber[]>([]);
-  const [manualPhone, setManualPhone] = useState(business?.phone_number ?? "");
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [searching, setSearching] = useState(false);
   const [provisioning, setProvisioning] = useState<string | null>(null);
@@ -53,6 +59,22 @@ export function PhoneProvisioningPanel({
       if (next.prefix_example !== undefined) setPrefixExample(next.prefix_example);
       if (next.prefix_supported !== undefined) setPrefixSupported(next.prefix_supported);
       if (next.example_phone) setExamplePhone(next.example_phone);
+      if (next.number_type_options?.length) {
+        setNumberTypeOptions(next.number_type_options);
+        const defaultType =
+          next.default_number_type || next.number_type_options[0]?.value || "";
+        setNumberType((prev) =>
+          prev && next.number_type_options!.some((o) => o.value === prev) ? prev : defaultType,
+        );
+        const effective =
+          next.default_number_type || next.number_type_options[0]?.value || "";
+        if (next.country === "GB" && effective === "mobile") {
+          setPrefixSupported(false);
+        }
+      } else if (next.default_number_type) {
+        setNumberType(next.default_number_type);
+        setNumberTypeOptions([]);
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not load phone status");
     } finally {
@@ -70,14 +92,22 @@ export function PhoneProvisioningPanel({
     setSuccess("");
     setResults([]);
     try {
-      const data = await api.searchAvailablePhoneNumbers(prefix.trim() || undefined);
+      const data = await api.searchAvailablePhoneNumbers(
+        prefix.trim() || undefined,
+        numberType || undefined,
+      );
       setResults(data.numbers);
       // Update prefix UI hints from what the API returned for this country
       if (data.prefix_label) setPrefixLabel(data.prefix_label);
       if (data.prefix_example !== undefined) setPrefixExample(data.prefix_example);
       if (data.prefix_supported !== undefined) setPrefixSupported(data.prefix_supported);
+      if (data.number_type) setNumberType(data.number_type);
       if (data.numbers.length === 0) {
-        setError(`No numbers found — try a different ${data.prefix_label.toLowerCase()}.`);
+        setError(
+          numberType === "mobile" && status?.country === "GB"
+            ? "No UK mobile numbers found — check Telnyx UK regulatory approval, or try Local / geographic."
+            : `No numbers found — try a different search or number type.`,
+        );
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Search failed");
@@ -141,11 +171,57 @@ export function PhoneProvisioningPanel({
 
   return (
     <div className="space-y-5">
+      <VerificationPanel
+        businessName={business?.name ?? "Business"}
+        onVerificationUpdated={loadStatus}
+      />
+
+      {status?.verification_required && !status.verification_approved && !status.can_search ? (
+        <p className="text-sm text-muted-foreground">
+          Complete regulatory verification above to search for numbers in {status.country}.
+        </p>
+      ) : null}
+
       {status?.can_search ? (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Search for a local number in {status.country}. We&apos;ll buy it, connect voice + SMS,
-            and assign it to your AI receptionist — no Telnyx dashboard required.
+            Search for a number in {status.country}. We&apos;ll buy it, connect voice + SMS, and
+            assign it to your AI receptionist — no Telnyx dashboard required.
+          </p>
+          {numberTypeOptions.length > 0 && (
+            <div className="space-y-2">
+              <Label>Number type</Label>
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                {numberTypeOptions.map((opt) => (
+                  <label
+                    key={opt.value}
+                    className="flex cursor-pointer items-start gap-2 rounded-md border px-3 py-2 text-sm has-[:checked]:border-primary has-[:checked]:bg-primary/5"
+                  >
+                    <input
+                      type="radio"
+                      name="number-type"
+                      value={opt.value}
+                      checked={numberType === opt.value}
+                      onChange={() => {
+                        setNumberType(opt.value);
+                        setResults([]);
+                        setPrefix("");
+                        if (opt.value === "mobile" && status.country === "GB") {
+                          setPrefixSupported(false);
+                        } else if (status.prefix_supported !== false) {
+                          setPrefixSupported(true);
+                        }
+                      }}
+                      className="mt-0.5"
+                    />
+                    <span>{opt.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+          <p className="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            {phoneSearchHint(status.country, numberType)}
           </p>
           <div className="flex flex-wrap gap-2">
             {prefixSupported ? (
@@ -197,10 +273,13 @@ export function PhoneProvisioningPanel({
         </div>
       ) : (
         !compact && (
-          <p className="text-sm text-muted-foreground">
-            Automatic provisioning is not enabled on this platform. Enter a number you already
-            own in Telnyx below — it must use the shared TeXML webhook from Settings.
-          </p>
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Automatic provisioning is not enabled on this platform. Enter a number you already
+              own in Telnyx below — it must use the shared TeXML webhook from Settings.
+            </p>
+            <p className="text-xs text-muted-foreground">{telnyxBackendHint()}</p>
+          </div>
         )
       )}
 

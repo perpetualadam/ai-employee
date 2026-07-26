@@ -53,10 +53,14 @@ def create_voice_call(
     call_sid: str,
     caller_phone: str,
 ) -> CallLog:
+    from app.providers.factory import get_telephony_provider
+
+    telephony = get_telephony_provider(business=business, db=db)
     call = CallLog(
         id=str(uuid4()),
         business_id=business.id,
         external_call_id=call_sid,
+        provider=telephony.provider_name,
         channel=ConversationChannel.VOICE,
         direction=CallDirection.INBOUND,
         status=CallStatus.IN_PROGRESS,
@@ -70,6 +74,14 @@ def create_voice_call(
     logger.info(
         "Voice call started",
         extra={"call_log_id": call.id, "business_id": business.id, "call_sid": call_sid},
+    )
+    from app.plugins.publishers import publish_call_started
+
+    publish_call_started(
+        business_id=business.id,
+        call_log_id=call.id,
+        caller_phone=caller_phone,
+        provider=telephony.provider_name,
     )
     return call
 
@@ -247,4 +259,12 @@ def handle_call_status(
         logger.info(
             "Voice call ended",
             extra={"call_log_id": call_log_id, "status": call_status},
+        )
+        from app.plugins.publishers import publish_call_ended
+
+        publish_call_ended(
+            business_id=call_log.business_id,
+            call_log_id=call_log_id,
+            status=call_status,
+            duration_seconds=call_log.duration_seconds,
         )

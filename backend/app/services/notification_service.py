@@ -1,5 +1,7 @@
 """SMS and email notification service."""
 
+from __future__ import annotations
+
 import logging
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
@@ -9,7 +11,10 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.integrations.registry import get_email_provider
 from app.models import Appointment, Business, Customer, User
+from app.providers.capabilities import Capability, ProviderCapabilities
+from app.providers.metrics import get_provider_metrics
 from app.services.messaging.factory import get_sms_provider_for_business
+from app.services.sms_log_service import SmsLogService
 from app.voice.slots import spoken_local_time
 
 logger = logging.getLogger(__name__)
@@ -21,6 +26,29 @@ class NotificationService:
     def __init__(self, db: Session, business: Business):
         self.db = db
         self.business = business
+        self._sms_log = SmsLogService(db)
+
+    def _record_sms(
+        self,
+        *,
+        provider: str,
+        from_number: str | None,
+        to_number: str,
+        body: str,
+        sent: bool,
+        external_id: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        self._sms_log.record_outbound(
+            business_id=self.business.id,
+            provider=provider,
+            from_number=from_number,
+            to_number=to_number,
+            body=body,
+            sent=sent,
+            external_id=external_id,
+            error=error,
+        )
 
     def _from_number(self) -> str | None:
         settings = get_settings()
@@ -29,38 +57,86 @@ class NotificationService:
     def is_sms_functional(self) -> bool:
         """True when outbound SMS can be sent for this business (provider + sender configured)."""
         provider = get_sms_provider_for_business(self.business)
-        if provider.provider_name == "dev_log":
+        caps = provider.get_capabilities()
+        if not caps.supports(Capability.SMS) or caps.simulated:
             return False
         if not provider.is_configured():
             return False
-        if not self._from_number():
-            return False
-        settings = get_settings()
-        if provider.provider_name == "telnyx" and not settings.telnyx_messaging_profile_id:
-            return False
-        return True
+        return bool(self._from_number())
+
+    def _publish_sms_sent_event(self, phone: str, message: str, provider: str, sent: bool) -> None:
+        from app.plugins.publishers import publish_sms_sent
+
+        publish_sms_sent(
+            business_id=self.business.id,
+            to_number=phone,
+            provider=provider,
+            sent=sent,
+            body=message,
+        )
 
     def send_sms(self, phone: str, message: str) -> dict:
         provider = get_sms_provider_for_business(self.business)
+        caps = provider.get_capabilities()
         if not provider.is_configured():
             provider = get_sms_provider_for_business(None)
-        if provider.provider_name == "dev_log" or not provider.is_configured():
+            caps = provider.get_capabilities()
+
+        if not caps.supports(Capability.SMS) or caps.simulated or not provider.is_configured():
             logger.info(
                 "SMS logged (dev mode)",
                 extra={"to": phone, "message": message, "business_id": self.business.id},
             )
-            return {"sent": True, "provider": "dev_log", "phone": phone, "message": message}
+            result = {"sent": True, "provider": provider.provider_name, "phone": phone, "message": message}
+            self._record_sms(
+                provider=provider.provider_name,
+                from_number=self._from_number(),
+                to_number=phone,
+                body=message,
+                sent=True,
+            )
+            get_provider_metrics().record_sms(provider.provider_name, success=True)
+            self._publish_sms_sent_event(phone, message, provider.provider_name, True)
+            return result
 
         from_number = self._from_number()
         if not from_number:
             logger.error("No from number for SMS", extra={"business_id": self.business.id})
-            return {
+            result = {
                 "sent": False,
                 "provider": provider.provider_name,
                 "error": "No sender phone configured",
             }
-
-        result = provider.send_sms(from_number, phone, message)
+            self._record_sms(
+                provider=provider.provider_name,
+                from_number=None,
+                to_number=phone,
+                body=message,
+                sent=False,
+                error=result["error"],
+            )
+            get_provider_metrics().record_sms(provider.provider_name, success=False)
+            self._publish_sms_sent_event(phone, message, provider.provider_name, False)
+            return result
+        self._record_sms(
+            provider=str(result.get("provider") or provider.provider_name),
+            from_number=from_number,
+            to_number=phone,
+            body=message,
+            sent=bool(result.get("sent")),
+            external_id=result.get("id"),
+            error=result.get("error"),
+        )
+        get_provider_metrics().record_sms(
+            str(result.get("provider") or provider.provider_name),
+            success=bool(result.get("sent")),
+        )
+        self._publish_sms_sent_event(
+            phone,
+            message,
+            str(result.get("provider") or provider.provider_name),
+            bool(result.get("sent")),
+        )
         if not result.get("sent"):
             logger.error(
                 "SMS delivery failed",
@@ -74,12 +150,15 @@ class NotificationService:
 
     def send_email(self, email: str, subject: str, body: str) -> dict:
         provider = get_email_provider()
-        if provider.provider_name == "dev_log" or not provider.is_configured():
+        get_caps = getattr(provider, "get_capabilities", None)
+        caps = get_caps() if callable(get_caps) else None
+        is_simulated = bool(getattr(caps, "simulated", False)) if isinstance(caps, ProviderCapabilities) else provider.provider_name == "dev_log"
+        if is_simulated or not provider.is_configured():
             logger.info(
                 "Email logged (dev mode)",
                 extra={"to": email, "subject": subject, "business_id": self.business.id},
             )
-            return {"sent": True, "provider": "dev_log", "email": email, "subject": subject}
+            return {"sent": True, "provider": provider.provider_name, "email": email, "subject": subject}
 
         result = provider.send_email(email, subject, body)
         if not result.get("sent"):

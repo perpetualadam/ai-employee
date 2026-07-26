@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.reminder_service import ReminderService
 from app.services.voice_mode_service import VoiceModeService
@@ -26,45 +26,54 @@ class ReminderServiceSpecification(unittest.TestCase):
 
 
 class VoiceModeServiceSpecification(unittest.TestCase):
-    def test_stream_falls_back_to_gather_without_deepgram(self) -> None:
+    def test_stream_falls_back_to_gather_without_stt_plugin(self) -> None:
         with patch("app.services.voice_mode_service.get_settings") as settings_mock:
             settings_mock.return_value.voice_mode = "stream"
-            settings_mock.return_value.deepgram_api_key = ""
             settings_mock.return_value.telnyx_texml_connection_id = "conn"
             settings_mock.return_value.telnyx_account_sid = "acct"
             with patch(
-                "app.services.voice_mode_service.telnyx_client.is_telnyx_configured",
-                return_value=True,
+                "app.services.voice_mode_service.get_speech_to_text_plugin",
+                return_value=None,
             ):
-                self.assertEqual(VoiceModeService.effective_mode(), "gather")
+                with patch(
+                    "app.services.voice_mode_service.telnyx_client.is_telnyx_configured",
+                    return_value=True,
+                ):
+                    self.assertEqual(VoiceModeService.effective_mode(), "gather")
 
-    def test_stream_active_when_deepgram_and_telnyx_configured(self) -> None:
+    def test_stream_active_when_stt_and_telnyx_configured(self) -> None:
+        stt = MagicMock()
+        stt.is_configured.return_value = True
         with patch("app.services.voice_mode_service.get_settings") as settings_mock:
             settings_mock.return_value.voice_mode = "stream"
-            settings_mock.return_value.deepgram_api_key = "dg-key"
             settings_mock.return_value.telnyx_texml_connection_id = "conn"
             settings_mock.return_value.telnyx_account_sid = "acct"
             with patch(
-                "app.services.voice_mode_service.telnyx_client.is_telnyx_configured",
-                return_value=True,
+                "app.services.voice_mode_service.get_speech_to_text_plugin",
+                return_value=stt,
             ):
-                self.assertEqual(VoiceModeService.effective_mode(), "stream")
+                with patch(
+                    "app.services.voice_mode_service.telnyx_client.is_telnyx_configured",
+                    return_value=True,
+                ):
+                    self.assertEqual(VoiceModeService.effective_mode(), "stream")
 
     def test_status_includes_recommendation(self) -> None:
         status = VoiceModeService.status()
         self.assertIn("effective_mode", status)
-        self.assertIn("deepgram_configured", status)
+        self.assertIn("speech_to_text_configured", status)
         self.assertEqual(status["production_recommendation"], "gather")
 
 
 class OutboundCallSpecification(unittest.TestCase):
-    @patch("app.services.outbound_call_service.telnyx_client.initiate_call")
-    @patch(
-        "app.services.outbound_call_service.telnyx_client.is_outbound_call_configured",
-        return_value=True,
-    )
-    def test_initiate_callback_creates_call_log(self, _mock_cfg, mock_call) -> None:
+    @patch("app.services.outbound_call_service.get_call_service")
+    def test_initiate_callback_creates_call_log(self, get_service_mock) -> None:
         from app.services.outbound_call_service import OutboundCallService
+
+        call_service = MagicMock()
+        call_service.is_configured.return_value = True
+        call_service.place_outbound_call = AsyncMock(return_value={"call_id": "call-abc"})
+        get_service_mock.return_value = call_service
 
         db = MagicMock()
         business = MagicMock()
@@ -84,7 +93,6 @@ class OutboundCallSpecification(unittest.TestCase):
             with patch("app.services.outbound_call_service.get_settings") as settings_mock:
                 settings_mock.return_value.public_api_url = "http://localhost:8000"
                 settings_mock.return_value.api_v1_prefix = "/api/v1"
-                mock_call.return_value = {"call_control_id": "call-abc"}
                 call_log = OutboundCallService.initiate_callback(
                     db,
                     business,
@@ -92,7 +100,7 @@ class OutboundCallSpecification(unittest.TestCase):
                 )
 
         self.assertEqual(call_log.external_call_id, "call-abc")
-        mock_call.assert_called_once()
+        call_service.place_outbound_call.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -1,0 +1,14 @@
+from app.plugins.categories import PluginCategory
+from app.plugins.manifest import PluginManifest
+
+MANIFEST = PluginManifest(
+    plugin_name="vonage",
+    plugin_version="1.0.0",
+    plugin_author="AI Employee",
+    plugin_description="Vonage telephony and messaging plugin",
+    plugin_category=PluginCategory.TELEPHONY,
+    supported_services=("telephony", "numbers", "regulatory", "messaging"),
+    supported_countries=frozenset({"*"}),
+    permissions=("sms", "voice", "webhook"),
+    provider_priority=90,
+)

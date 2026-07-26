@@ -5,6 +5,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock, patch
 
+from app.services.phone_number_service import PhoneNumberService
 from app.services.phone_provisioning_service import PhoneProvisioningService
 
 
@@ -15,31 +16,22 @@ class PhoneProvisioningSpecification(unittest.TestCase):
         business.phone_provisioned = False
         business.country = "US"
 
+        provider = MagicMock()
+        provider.is_configured.return_value = True
         with patch(
-            "app.services.phone_provisioning_service.telnyx_client.is_phone_provisioning_configured",
-            return_value=True,
+            "app.services.phone_provisioning_service.get_number_provisioning_provider",
+            return_value=provider,
         ):
             status = PhoneProvisioningService.status(business)
 
         self.assertFalse(status["provisioned"])
         self.assertTrue(status["can_search"])
 
-    @patch("app.services.phone_provisioning_service.telnyx_client.configure_phone_number")
-    @patch("app.services.phone_provisioning_service.telnyx_client.find_phone_number_record")
-    @patch("app.services.phone_provisioning_service.telnyx_client.wait_for_number_order")
-    @patch("app.services.phone_provisioning_service.telnyx_client.create_number_order")
-    @patch(
-        "app.services.phone_provisioning_service.telnyx_client.is_phone_provisioning_configured",
-        return_value=True,
-    )
-    def test_provision_assigns_number_to_business(
-        self,
-        _mock_configured,
-        mock_order,
-        _mock_wait,
-        mock_find,
-        mock_configure,
-    ) -> None:
+    @patch("app.services.phone_provisioning_service.get_number_provisioning_provider")
+    def test_provision_assigns_number_to_business(self, mock_get_provider) -> None:
+        from tests.fakes.fake_providers import FakeNumberProvisioningProvider
+
+        mock_get_provider.return_value = FakeNumberProvisioningProvider()
         db = MagicMock()
         business = MagicMock()
         business.id = "biz-1"
@@ -47,20 +39,20 @@ class PhoneProvisioningSpecification(unittest.TestCase):
         business.phone_provisioned = False
         business.phone_number = None
 
-        db.query.return_value.filter.return_value.all.return_value = []
+        mock_get_provider.return_value = FakeNumberProvisioningProvider()
 
-        mock_order.return_value = {"id": "order-1"}
-        mock_find.return_value = {"id": "pn-123", "phone_number": "+16145551234"}
-
-        with patch("app.services.phone_provisioning_service.get_settings") as settings_mock:
-            settings_mock.return_value.telnyx_texml_connection_id = "conn-1"
-            settings_mock.return_value.telnyx_messaging_profile_id = "mp-1"
+        with patch.object(PhoneNumberService, "provision", return_value={
+            "phone_number": "+16145551234",
+            "provisioned": True,
+            "telnyx_phone_number_id": "pn-123",
+            "provider_number_id": "pn-123",
+            "message": "ok",
+        }) as mock_provision:
             result = PhoneProvisioningService.provision(db, business, "+16145551234")
 
         self.assertTrue(result["provisioned"])
         self.assertEqual(result["phone_number"], "+16145551234")
-        self.assertEqual(business.telnyx_phone_number_id, "pn-123")
-        mock_configure.assert_called_once()
+        mock_provision.assert_called_once_with(business, "+16145551234")
 
     def test_duplicate_check_normalizes_with_each_business_country(self) -> None:
         from fastapi import HTTPException
@@ -72,6 +64,7 @@ class PhoneProvisioningSpecification(unittest.TestCase):
         other.phone_number = "07949046947"
 
         db.query.return_value.filter.return_value.all.return_value = [other]
+        db.query.return_value.filter.return_value.first.return_value = None
 
         with self.assertRaises(HTTPException) as ctx:
             PhoneProvisioningService._assert_number_available(
@@ -81,7 +74,3 @@ class PhoneProvisioningSpecification(unittest.TestCase):
                 "GB",
             )
         self.assertEqual(ctx.exception.status_code, 409)
-
-
-if __name__ == "__main__":
-    unittest.main()

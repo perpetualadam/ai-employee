@@ -694,12 +694,19 @@ class ReceptionistToolsImpl:
                 self.db.commit()
 
                 if call.external_call_id:
-                    from app.integrations.registry import get_voice_call_control
+                    from app.providers.factory import get_call_service
 
-                    voice = get_voice_call_control(self.business)
+                    call_service = get_call_service(
+                        business=self.business,
+                        db=self.db,
+                        resource_provider=call.provider,
+                    )
                     escalation = self.business.escalation_phone or self.business.phone_number
-                    if escalation and voice.is_configured():
-                        await voice.transfer_call(call.external_call_id, escalation)
+                    if escalation and call_service.is_configured():
+                        await call_service.transfer_call(call.external_call_id, escalation)
+                        if not call.provider:
+                            call.provider = call_service.provider_name
+                            self.db.commit()
                         live_transfer = True
                 else:
                     self.owner_notified = self.notifications.notify_owner_escalation(

@@ -106,11 +106,13 @@ class NumberSearchProfileSpecification(unittest.TestCase):
         self.assertNotEqual(p.prefix_example, "")
 
     def test_uk_uses_locality_filter_not_ndc(self) -> None:
-        """GB numbers are searched by city/area, not a numeric NDC."""
+        """GB local numbers are searched by city/area; mobile is the default type."""
         p = get_number_search_profile("GB")
         self.assertEqual(p.prefix_param, "filter[locality]")
-        self.assertEqual(p.prefix_digits, ())  # free text, no digit constraint
+        self.assertEqual(p.prefix_digits, ())
         self.assertIn("London", p.prefix_example)
+        self.assertEqual(p.default_phone_number_type, "mobile")
+        self.assertTrue(any(v == "mobile" for v, _ in p.available_phone_number_types))
 
     def test_australia_uses_ndc_with_2_digit_std(self) -> None:
         p = get_number_search_profile("AU")
@@ -158,12 +160,56 @@ class TelnyxClientNumberSearchSpecification(unittest.TestCase):
         }
 
     @patch("app.voice.telnyx_client._request")
-    def test_uk_search_sends_locality_filter_not_ndc(self, mock_req: MagicMock) -> None:
-        """For GB a prefix must go through filter[locality], NOT filter[national_destination_code]."""
+    def test_uk_search_defaults_to_mobile(self, mock_req: MagicMock) -> None:
         mock_req.return_value = self._make_telnyx_response("+447911123456")
 
         from app.voice import telnyx_client
-        results = telnyx_client.search_available_phone_numbers("GB", prefix="London")
+        telnyx_client.search_available_phone_numbers("GB")
+
+        _, kwargs = mock_req.call_args
+        params = kwargs.get("params", {})
+        self.assertEqual(params.get("filter[phone_number_type]"), "mobile")
+        self.assertNotIn("filter[locality]", params)
+
+    @patch("app.voice.telnyx_client._request")
+    def test_uk_search_sends_locality_filter_for_local_type(self, mock_req: MagicMock) -> None:
+        """For GB local numbers a prefix goes through filter[locality]."""
+        mock_req.return_value = self._make_telnyx_response("+442071234567")
+
+        from app.voice import telnyx_client
+        results = telnyx_client.search_available_phone_numbers(
+            "GB", prefix="London", number_type="local"
+        )
+
+        self.assertEqual(len(results), 1)
+        _, kwargs = mock_req.call_args
+        params = kwargs.get("params", {})
+        self.assertIn("filter[locality]", params)
+        self.assertEqual(params["filter[locality]"], "London")
+        self.assertEqual(params.get("filter[phone_number_type]"), "local")
+        self.assertNotIn("filter[national_destination_code]", params)
+
+    @patch("app.voice.telnyx_client._request")
+    def test_uk_mobile_ignores_locality_prefix(self, mock_req: MagicMock) -> None:
+        mock_req.return_value = self._make_telnyx_response("+447911123456")
+
+        from app.voice import telnyx_client
+        telnyx_client.search_available_phone_numbers("GB", prefix="London", number_type="mobile")
+
+        _, kwargs = mock_req.call_args
+        params = kwargs.get("params", {})
+        self.assertEqual(params.get("filter[phone_number_type]"), "mobile")
+        self.assertNotIn("filter[locality]", params)
+
+    @patch("app.voice.telnyx_client._request")
+    def test_uk_search_sends_locality_filter_not_ndc(self, mock_req: MagicMock) -> None:
+        """Legacy: GB with locality only when number_type is local."""
+        mock_req.return_value = self._make_telnyx_response("+447911123456")
+
+        from app.voice import telnyx_client
+        results = telnyx_client.search_available_phone_numbers(
+            "GB", prefix="London", number_type="local"
+        )
 
         self.assertEqual(len(results), 1)
         _, kwargs = mock_req.call_args
@@ -254,68 +300,99 @@ class SupportedCountriesSpecification(unittest.TestCase):
 class PhoneProvisioningStatusSpecification(unittest.TestCase):
     """PhoneProvisioningService.status returns correct can_search logic."""
 
-    @patch("app.services.phone_provisioning_service.telnyx_client.is_phone_provisioning_configured", return_value=True)
-    def test_can_search_false_when_already_provisioned(self, _cfg) -> None:
+    def _mock_provider(self, *, configured: bool):
+        provider = MagicMock()
+        provider.is_configured.return_value = configured
+        return patch(
+            "app.services.phone_provisioning_service.get_number_provisioning_provider",
+            return_value=provider,
+        )
+
+    def test_can_search_false_when_already_provisioned(self) -> None:
         """A provisioned business cannot provision again; can_search must be False."""
         from app.services.phone_provisioning_service import PhoneProvisioningService
+
         business = MagicMock()
         business.phone_provisioned = True
         business.phone_number = "+447911123456"
         business.country = "GB"
-        status = PhoneProvisioningService.status(business)
+        with self._mock_provider(configured=True):
+            status = PhoneProvisioningService.status(business)
         self.assertFalse(status["can_search"])
         self.assertFalse(status["manual_fallback_allowed"])
 
-    @patch("app.services.phone_provisioning_service.telnyx_client.is_phone_provisioning_configured", return_value=True)
-    def test_can_search_true_when_configured_and_not_provisioned(self, _cfg) -> None:
+    def test_can_search_true_when_configured_and_not_provisioned(self) -> None:
         from app.services.phone_provisioning_service import PhoneProvisioningService
+
         business = MagicMock()
         business.phone_provisioned = False
         business.phone_number = None
         business.country = "US"
-        status = PhoneProvisioningService.status(business)
+        with self._mock_provider(configured=True):
+            status = PhoneProvisioningService.status(business)
         self.assertTrue(status["can_search"])
         self.assertTrue(status["manual_fallback_allowed"])
 
-    @patch("app.services.phone_provisioning_service.telnyx_client.is_phone_provisioning_configured", return_value=False)
-    def test_can_search_false_when_platform_not_configured(self, _cfg) -> None:
+    def test_can_search_false_when_platform_not_configured(self) -> None:
         from app.services.phone_provisioning_service import PhoneProvisioningService
+
         business = MagicMock()
         business.phone_provisioned = False
         business.phone_number = None
         business.country = "US"
-        status = PhoneProvisioningService.status(business)
+        with self._mock_provider(configured=False):
+            status = PhoneProvisioningService.status(business)
         self.assertFalse(status["can_search"])
 
 
 class PhoneProvisioningServiceSearchSpecification(unittest.TestCase):
-    """PhoneProvisioningService.search_available passes prefix to telnyx_client correctly."""
+    """PhoneProvisioningService.search_available passes prefix to provider correctly."""
 
-    @patch("app.services.phone_provisioning_service.telnyx_client.is_phone_provisioning_configured", return_value=True)
-    @patch("app.services.phone_provisioning_service.telnyx_client.search_available_phone_numbers")
-    def test_gb_business_search_passes_prefix_not_area_code(self, mock_search, _cfg) -> None:
+    def _mock_provider(self, *, configured: bool = True, search_fn=None):
+        provider = MagicMock()
+        provider.is_configured.return_value = configured
+        if search_fn:
+            provider.search_numbers = search_fn
+        return patch(
+            "app.services.phone_provisioning_service.get_number_provisioning_provider",
+            return_value=provider,
+        )
+
+    def test_gb_business_search_passes_prefix_not_area_code(self) -> None:
         from app.services.phone_provisioning_service import PhoneProvisioningService
 
         business = MagicMock()
         business.country = "GB"
-        mock_search.return_value = [{"phone_number": "+447911123456", "region": None, "cost": None}]
+        mock_search = MagicMock(return_value=[{"phone_number": "+447911123456", "region": None, "cost": None}])
 
-        PhoneProvisioningService.search_available(business, prefix="London")
+        with self._mock_provider(search_fn=mock_search):
+            PhoneProvisioningService.search_available(business, prefix="London")
 
-        mock_search.assert_called_once_with("GB", prefix="London", limit=10)
+        mock_search.assert_called_once_with("GB", prefix="London", limit=10, number_type=None)
 
-    @patch("app.services.phone_provisioning_service.telnyx_client.is_phone_provisioning_configured", return_value=True)
-    @patch("app.services.phone_provisioning_service.telnyx_client.search_available_phone_numbers")
-    def test_us_business_search_passes_prefix(self, mock_search, _cfg) -> None:
+    def test_gb_business_search_passes_number_type(self) -> None:
+        from app.services.phone_provisioning_service import PhoneProvisioningService
+
+        business = MagicMock()
+        business.country = "GB"
+        mock_search = MagicMock(return_value=[])
+
+        with self._mock_provider(search_fn=mock_search):
+            PhoneProvisioningService.search_available(business, number_type="mobile")
+
+        mock_search.assert_called_once_with("GB", prefix=None, limit=10, number_type="mobile")
+
+    def test_us_business_search_passes_prefix(self) -> None:
         from app.services.phone_provisioning_service import PhoneProvisioningService
 
         business = MagicMock()
         business.country = "US"
-        mock_search.return_value = []
+        mock_search = MagicMock(return_value=[])
 
-        PhoneProvisioningService.search_available(business, prefix="614")
+        with self._mock_provider(search_fn=mock_search):
+            PhoneProvisioningService.search_available(business, prefix="614")
 
-        mock_search.assert_called_once_with("US", prefix="614", limit=10)
+        mock_search.assert_called_once_with("US", prefix="614", limit=10, number_type=None)
 
 
 if __name__ == "__main__":

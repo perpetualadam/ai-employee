@@ -79,6 +79,14 @@ class BusinessUpdate(BaseModel):
     phone_number: Optional[str] = None
     escalation_phone: Optional[str] = None
     reminders_enabled: Optional[bool] = None
+    provider_config: Optional[dict[str, str]] = None
+
+
+class ProviderSettingsResponse(BaseModel):
+    provider_config: dict[str, str]
+    country_defaults: dict[str, str]
+    global_defaults: dict[str, str]
+    available: dict[str, list[str]]
 
 
 class BusinessResponse(BaseModel):
@@ -97,6 +105,7 @@ class BusinessResponse(BaseModel):
     phone_provisioned: bool = False
     escalation_phone: Optional[str]
     reminders_enabled: bool = True
+    provider_config: dict[str, str] = Field(default_factory=dict)
     public_slug: Optional[str]
     onboarding_completed: bool
     created_at: datetime
@@ -120,6 +129,11 @@ class PhoneProvisioningStatusResponse(BaseModel):
     prefix_example: str = ""
     prefix_supported: bool = True
     example_phone: str = "+15551234567"
+    default_number_type: Optional[str] = None
+    number_type_options: list[dict[str, str]] = Field(default_factory=list)
+    verification_required: bool = False
+    verification_status: Optional[str] = None
+    verification_approved: bool = True
 
 
 class PhoneSearchResponse(BaseModel):
@@ -128,6 +142,8 @@ class PhoneSearchResponse(BaseModel):
     prefix_label: str = "Area code"  # UI label for the optional prefix input
     prefix_example: str = ""  # Placeholder shown in the UI text box
     prefix_supported: bool = True
+    number_type: Optional[str] = None
+    number_type_options: list[dict[str, str]] = Field(default_factory=list)
 
 
 class PhoneProvisionRequest(BaseModel):
@@ -138,7 +154,34 @@ class PhoneProvisionResponse(BaseModel):
     phone_number: str
     provisioned: bool
     telnyx_phone_number_id: Optional[str] = None
+    provider_number_id: Optional[str] = None
     message: str
+
+
+class VerificationDocumentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    document_type: str
+    verification_status: str
+    storage_key: str
+    provider_document_id: Optional[str] = None
+    created_at: datetime
+
+
+class VerificationSubmitRequest(BaseModel):
+    business_name: str = Field(min_length=1, max_length=255)
+    contact_email: Optional[str] = None
+    address: Optional[str] = None
+
+
+class VerificationStatusResponse(BaseModel):
+    country_code: str
+    status: str
+    provider_end_user_id: Optional[str] = None
+    provider_bundle_id: Optional[str] = None
+    last_checked: Optional[str] = None
+    uploaded_documents: list[VerificationDocumentResponse] = Field(default_factory=list)
 
 
 class OutboundCallRequest(BaseModel):

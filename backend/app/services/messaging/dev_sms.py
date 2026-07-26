@@ -2,6 +2,7 @@
 
 import logging
 
+from app.providers.capability_presets import dev_sms, runtime_caps
 from app.services.messaging.provider import SmsProvider
 
 logger = logging.getLogger(__name__)
@@ -14,6 +15,9 @@ class DevSmsProvider(SmsProvider):
 
     def is_configured(self) -> bool:
         return True
+
+    def get_capabilities(self):
+        return runtime_caps(dev_sms(), self, service="messaging")
 
     def send_sms(self, from_number: str, to_number: str, text: str) -> dict:
         logger.info(

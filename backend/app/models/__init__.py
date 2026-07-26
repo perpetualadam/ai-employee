@@ -119,6 +119,7 @@ class Business(Base, TimestampMixin):
     )
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     reminders_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    provider_config: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
 
     @property
     def phone_provisioned(self) -> bool:
@@ -142,6 +143,15 @@ class Business(Base, TimestampMixin):
     )
     call_logs: Mapped[list["CallLog"]] = relationship(
         "CallLog", back_populates="business", cascade="all, delete-orphan"
+    )
+    sms_logs: Mapped[list["SmsLog"]] = relationship(
+        "SmsLog", back_populates="business", cascade="all, delete-orphan"
+    )
+    regulatory_profiles: Mapped[list["BusinessRegulatoryProfile"]] = relationship(
+        "BusinessRegulatoryProfile", back_populates="business", cascade="all, delete-orphan"
+    )
+    phone_numbers: Mapped[list["PhoneNumber"]] = relationship(
+        "PhoneNumber", back_populates="business", cascade="all, delete-orphan"
     )
 
 
@@ -326,6 +336,7 @@ class CallLog(Base, TimestampMixin):
         index=True,
     )
     external_call_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    provider: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
     channel: Mapped[ConversationChannel] = mapped_column(
         Enum(ConversationChannel, name="conversation_channel", values_callable=_enum_values),
         default=ConversationChannel.VOICE,
@@ -356,6 +367,36 @@ class CallLog(Base, TimestampMixin):
     ai_activities: Mapped[list["AIActivityLog"]] = relationship(
         "AIActivityLog", back_populates="call_log", cascade="all, delete-orphan"
     )
+
+
+class SmsLog(Base, TimestampMixin):
+    """Outbound (and future inbound) SMS audit trail with provider attribution."""
+
+    __tablename__ = "sms_logs"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    business_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("businesses.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    provider: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    direction: Mapped[CallDirection] = mapped_column(
+        Enum(CallDirection, name="call_direction", values_callable=_enum_values, create_type=False),
+        default=CallDirection.OUTBOUND,
+        nullable=False,
+    )
+    from_number: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    to_number: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    external_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    sent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    business: Mapped["Business"] = relationship("Business", back_populates="sms_logs")
 
 
 class AIActivityLog(Base):
@@ -444,3 +485,11 @@ class WebContinuationToken(Base, TimestampMixin):
     )
     token: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+from app.models.telecom import (  # noqa: E402
+    BusinessRegulatoryProfile,
+    CountryRegulation,
+    PhoneNumber,
+    UploadedDocument,
+)

@@ -19,6 +19,7 @@ from app.models import (  # noqa: F401
     CallLog,
     Customer,
     Job,
+    SmsLog,
     User,
     WebContinuationToken,
 )

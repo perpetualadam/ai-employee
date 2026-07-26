@@ -77,3 +77,35 @@ class ConversationChannel(str, enum.Enum):
     VOICE = "voice"
     SMS = "sms"
     WEB_CHAT = "web_chat"
+
+
+class RegulatoryStatus(str, enum.Enum):
+    NOT_REQUIRED = "not_required"
+    PENDING = "pending"
+    DOCUMENTS_REQUIRED = "documents_required"
+    SUBMITTED = "submitted"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class PhoneNumberStatus(str, enum.Enum):
+    PENDING = "pending"
+    PROVISIONING = "provisioning"
+    ACTIVE = "active"
+    FAILED = "failed"
+    RELEASED = "released"
+
+
+class DocumentVerificationStatus(str, enum.Enum):
+    PENDING = "pending"
+    UPLOADED = "uploaded"
+    SUBMITTED = "submitted"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class DocumentType(str, enum.Enum):
+    BUSINESS_REGISTRATION = "business_registration"
+    PROOF_OF_ADDRESS = "proof_of_address"
+    ID_DOCUMENT = "id_document"
+    OTHER = "other"

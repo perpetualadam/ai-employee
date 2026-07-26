@@ -1,7 +1,8 @@
-"""Outbound callback calls via Telnyx Call Control."""
+"""Outbound callback calls via TelephonyProvider (CallService)."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from uuid import uuid4
 
@@ -12,9 +13,10 @@ from app.config import get_settings
 from app.domain.phone import is_plausible_phone, normalize_phone
 from app.models import Business, CallLog, Customer
 from app.models.enums import CallDirection, CallStatus, ConversationChannel
+from app.providers.exceptions import ProviderError
+from app.providers.factory import get_call_service
 from app.services.customer_service import CustomerService
-from app.voice import telnyx_client
-
+from app.utils.errors import http_exception_from_provider
 logger = logging.getLogger(__name__)
 
 
@@ -28,7 +30,7 @@ class OutboundCallService:
         phone: str | None = None,
         reason: str | None = None,
     ) -> CallLog:
-        if not telnyx_client.is_outbound_call_configured():
+        if not get_call_service(business=business, db=db).is_configured():
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Outbound calling is not configured on this platform.",
@@ -82,14 +84,26 @@ class OutboundCallService:
         )
 
         try:
-            result = telnyx_client.initiate_call(
-                from_number=from_number,
-                to_number=to_number,
-                webhook_url=webhook_url,
+            call_service = get_call_service(business=business, db=db)
+            result = asyncio.run(
+                call_service.place_outbound_call(
+                    from_number=from_number,
+                    to_number=to_number,
+                    webhook_url=webhook_url,
+                )
             )
-            call_log.external_call_id = result.get("call_control_id") or result.get("id")
+            call_log.external_call_id = result.get("call_id") or result.get("call_control_id")
+            call_log.provider = result.get("provider")
             db.commit()
             db.refresh(call_log)
+        except ProviderError as exc:
+            call_log.status = CallStatus.FAILED
+            db.commit()
+            logger.exception(
+                "Outbound call failed",
+                extra={"business_id": business.id, "call_log_id": call_log.id},
+            )
+            raise http_exception_from_provider(exc) from exc
         except Exception as exc:
             call_log.status = CallStatus.FAILED
             db.commit()

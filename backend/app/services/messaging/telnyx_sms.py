@@ -1,5 +1,7 @@
 """Telnyx SMS adapter."""
 
+from app.config import get_settings
+from app.providers.capability_presets import runtime_caps, telnyx_telephony
 from app.services.messaging.provider import SmsProvider
 from app.voice import telnyx_client
 
@@ -10,7 +12,11 @@ class TelnyxSmsProvider(SmsProvider):
         return "telnyx"
 
     def is_configured(self) -> bool:
-        return telnyx_client.is_telnyx_configured()
+        settings = get_settings()
+        return telnyx_client.is_telnyx_configured() and bool(settings.telnyx_messaging_profile_id)
+
+    def get_capabilities(self):
+        return runtime_caps(telnyx_telephony(), self, service="messaging")
 
     def send_sms(self, from_number: str, to_number: str, text: str) -> dict:
         try:

@@ -1,4 +1,4 @@
-"""Per-tenant phone number search and provisioning via Telnyx."""
+"""Per-tenant phone number search and provisioning — delegates to PhoneNumberService."""
 
 from __future__ import annotations
 
@@ -7,28 +7,40 @@ import logging
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
 from app.domain.phone import is_plausible_phone, normalize_phone
 from app.domain.telecom import get_example_phone_number, get_number_search_profile
 from app.models import Business
-from app.voice import telnyx_client
+from app.providers.exceptions import DuplicateProvisioningError, ProviderError
+from app.providers.factory import get_number_provisioning_provider
+from app.services.phone_number_service import PhoneNumberService
+from app.utils.errors import http_exception_from_provider
 
 logger = logging.getLogger(__name__)
 
 
 class PhoneProvisioningService:
+    """Backward-compatible facade — prefer PhoneNumberService via DI in new code."""
+
     @staticmethod
-    def status(business: Business) -> dict:
-        configured = telnyx_client.is_phone_provisioning_configured()
+    def _service(db: Session, business: Business | None = None) -> PhoneNumberService:
+        return PhoneNumberService(
+            db,
+            get_number_provisioning_provider(business=business, db=db),
+        )
+
+    @staticmethod
+    def status(business: Business, db: Session | None = None) -> dict:
+        if db is not None:
+            return PhoneProvisioningService._service(db).status(business)
+
+        provider = get_number_provisioning_provider()
+        configured = provider.is_configured()
         already_provisioned = bool(business.phone_provisioned)
         profile = get_number_search_profile(business.country)
         return {
             "phone_number": business.phone_number,
             "provisioned": already_provisioned,
             "platform_configured": configured,
-            # A business that already has a provisioned number cannot provision
-            # another one (provision() raises 409), so showing the search form
-            # would be misleading.
             "can_search": configured and not already_provisioned,
             "manual_fallback_allowed": not already_provisioned,
             "country": business.country,
@@ -36,6 +48,14 @@ class PhoneProvisioningService:
             "prefix_example": profile.prefix_example,
             "prefix_supported": profile.prefix_param is not None,
             "example_phone": get_example_phone_number(business.country),
+            "default_number_type": profile.default_phone_number_type,
+            "number_type_options": [
+                {"value": value, "label": label}
+                for value, label in profile.available_phone_number_types
+            ],
+            "verification_required": False,
+            "verification_status": None,
+            "verification_approved": True,
         }
 
     @staticmethod
@@ -44,17 +64,23 @@ class PhoneProvisioningService:
         *,
         prefix: str | None = None,
         limit: int = 10,
+        number_type: str | None = None,
     ) -> list[dict]:
-        if not telnyx_client.is_phone_provisioning_configured():
+        provider = get_number_provisioning_provider()
+        if not provider.is_configured():
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Phone provisioning is not configured on this platform.",
             )
-        return telnyx_client.search_available_phone_numbers(
-            business.country,
-            prefix=prefix,
-            limit=limit,
-        )
+        try:
+            return provider.search_numbers(
+                business.country,
+                prefix=prefix,
+                limit=limit,
+                number_type=number_type,
+            )
+        except ProviderError as exc:
+            raise http_exception_from_provider(exc) from exc
 
     @staticmethod
     def _assert_number_available(
@@ -63,95 +89,21 @@ class PhoneProvisioningService:
         business_id: str,
         country: str,
     ) -> None:
-        normalized = normalize_phone(phone_number, country)
-        existing = (
-            db.query(Business)
-            .filter(Business.phone_number.isnot(None), Business.id != business_id)
-            .all()
-        )
-        for other in existing:
-            if other.phone_number and normalize_phone(other.phone_number, other.country) == normalized:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="That phone number is already assigned to another business.",
-                )
+        from app.repositories.phone_number_repository import PhoneNumberRepository
+
+        try:
+            PhoneNumberRepository(db).assert_not_assigned_elsewhere(
+                phone_number, business_id, country
+            )
+        except DuplicateProvisioningError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     @staticmethod
     def provision(db: Session, business: Business, phone_number: str) -> dict:
-        if business.phone_provisioned:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="This business already has a provisioned phone number.",
-            )
-        if not telnyx_client.is_phone_provisioning_configured():
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Phone provisioning is not configured on this platform.",
-            )
-
-        normalized = normalize_phone(phone_number.strip(), business.country)
-        if not is_plausible_phone(normalized, business.country):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Enter a valid phone number in E.164 format.",
-            )
-
-        PhoneProvisioningService._assert_number_available(db, normalized, business.id, business.country)
-
-        settings = get_settings()
         try:
-            order = telnyx_client.create_number_order(normalized)
-            order_id = order.get("id")
-            if order_id:
-                telnyx_client.wait_for_number_order(order_id)
-
-            record = telnyx_client.find_phone_number_record(normalized)
-            if record is None:
-                raise RuntimeError("Purchased number not found in Telnyx account")
-
-            phone_id = record.get("id")
-            if not phone_id:
-                raise RuntimeError("Telnyx phone number record missing id")
-
-            telnyx_client.configure_phone_number(
-                phone_id,
-                connection_id=settings.telnyx_texml_connection_id,
-                messaging_profile_id=settings.telnyx_messaging_profile_id or None,
-            )
-        except HTTPException:
-            raise
-        except Exception as exc:
-            logger.exception(
-                "Phone provisioning failed",
-                extra={"business_id": business.id, "phone_number": normalized},
-            )
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Could not provision phone number: {exc}",
-            ) from exc
-
-        business.phone_number = normalized
-        business.telnyx_phone_number_id = str(phone_id)
-        db.commit()
-        db.refresh(business)
-
-        logger.info(
-            "Phone number provisioned",
-            extra={
-                "business_id": business.id,
-                "phone_number": normalized,
-                "telnyx_phone_number_id": phone_id,
-            },
-        )
-        return {
-            "phone_number": normalized,
-            "provisioned": True,
-            "telnyx_phone_number_id": str(phone_id),
-            "message": (
-                "Your business phone number is live. Customers can call it now — "
-                "inbound calls route to your AI receptionist automatically."
-            ),
-        }
+            return PhoneProvisioningService._service(db, business).provision(business, phone_number)
+        except ProviderError as exc:
+            raise http_exception_from_provider(exc) from exc
 
     @staticmethod
     def save_manual_phone(db: Session, business: Business, phone_number: str) -> Business:

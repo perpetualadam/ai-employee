@@ -30,6 +30,14 @@ class SmsService:
         body: str,
     ) -> None:
         business = find_business_by_phone(db, to_number)
+        from app.plugins.publishers import publish_sms_received
+
+        publish_sms_received(
+            business_id=business.id if business else None,
+            from_number=from_number,
+            to_number=to_number,
+            text=body,
+        )
         if business is None:
             logger.warning("Inbound SMS with no matching business", extra={"to": to_number})
             return

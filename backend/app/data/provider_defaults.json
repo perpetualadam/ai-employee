@@ -1,0 +1,90 @@
+{
+  "defaults": {
+    "telephony": "telnyx",
+    "numbers": "telnyx",
+    "regulatory": "telnyx",
+    "voice": "openai",
+    "messaging": "composite",
+    "storage": "local"
+  },
+  "countries": {
+    "GB": {
+      "telephony": "telnyx",
+      "numbers": "telnyx",
+      "regulatory": "telnyx",
+      "voice": "openai",
+      "messaging": "telnyx"
+    },
+    "US": {
+      "telephony": "telnyx",
+      "numbers": "telnyx",
+      "regulatory": "telnyx",
+      "voice": "openai",
+      "messaging": "telnyx"
+    },
+    "CA": {
+      "telephony": "telnyx",
+      "numbers": "telnyx",
+      "voice": "openai",
+      "messaging": "telnyx"
+    },
+    "AU": {
+      "telephony": "telnyx",
+      "numbers": "telnyx",
+      "regulatory": "telnyx",
+      "voice": "openai",
+      "messaging": "telnyx"
+    },
+    "NZ": {
+      "telephony": "telnyx",
+      "numbers": "telnyx",
+      "voice": "openai",
+      "messaging": "telnyx"
+    },
+    "EU": {
+      "telephony": "telnyx",
+      "numbers": "telnyx",
+      "regulatory": "telnyx",
+      "voice": "openai",
+      "messaging": "telnyx"
+    }
+  },
+  "priority": {
+    "GB": {
+      "telephony": ["telnyx", "twilio", "vonage"],
+      "numbers": ["telnyx", "twilio", "vonage"],
+      "regulatory": ["telnyx", "twilio", "vonage"],
+      "messaging": ["telnyx", "twilio", "vonage"]
+    },
+    "US": {
+      "telephony": ["twilio", "telnyx", "vonage"],
+      "numbers": ["twilio", "telnyx", "vonage"],
+      "regulatory": ["twilio", "telnyx", "vonage"],
+      "messaging": ["twilio", "telnyx", "vonage"]
+    },
+    "AU": {
+      "telephony": ["telnyx", "twilio", "vonage"],
+      "numbers": ["telnyx", "twilio", "vonage"],
+      "messaging": ["telnyx", "twilio", "vonage"]
+    }
+  },
+  "weights": {
+    "telnyx": 100,
+    "twilio": 95,
+    "vonage": 90,
+    "openai": 100,
+    "composite": 80,
+    "local": 10,
+    "local_sms": 10,
+    "dev_log": 5,
+    "mock": 1
+  },
+  "failover": {
+    "telephony": ["telnyx", "twilio", "vonage"],
+    "numbers": ["telnyx", "twilio", "vonage"],
+    "regulatory": ["telnyx", "twilio", "vonage"],
+    "voice": ["openai"],
+    "messaging": ["composite", "local", "telnyx"],
+    "storage": ["local"]
+  }
+}

@@ -1,4 +1,4 @@
-"""Telnyx media stream + Deepgram STT for lower-latency voice (VOICE_MODE=stream)."""
+"""Telnyx media stream + speech-to-text plugin for lower-latency voice (VOICE_MODE=stream)."""
 
 from __future__ import annotations
 
@@ -11,14 +11,15 @@ from collections.abc import AsyncIterator
 from fastapi import WebSocket
 
 from app.config import get_settings
+from app.dependencies.plugins import get_speech_to_text_plugin
 from app.database import SessionLocal
 from app.domain.telecom import resolve_voice_locale
 from app.models import Business, CallLog
+from app.providers.factory import get_call_service
 from app.services.voice_mode_service import VoiceModeService
-from app.voice import telnyx_client
 from app.voice.gather_handler import handle_gather_result
-from app.voice.stt.deepgram_stt import DeepgramSTT
 from app.voice.texml_builder import build_say_and_gather
+from app.plugins.interfaces import SpeechToTextPlugin
 
 logger = logging.getLogger(__name__)
 
@@ -41,14 +42,13 @@ async def _audio_from_telnyx(websocket: WebSocket) -> AsyncIterator[bytes]:
 
 async def _collect_final_transcript(
     audio_stream: AsyncIterator[bytes],
-    api_key: str,
+    stt_plugin: SpeechToTextPlugin,
     *,
     language: str = "en-US",
 ) -> str:
-    """Run Deepgram live STT and return the last final transcript segment."""
-    stt = DeepgramSTT(api_key, language=language)
+    """Run live STT via speech-to-text plugin and return the last final transcript segment."""
     final_parts: list[str] = []
-    async for chunk in stt.transcribe_stream(audio_stream):
+    async for chunk in stt_plugin.transcribe_stream(audio_stream, language=language):
         if chunk.is_final and chunk.text.strip():
             final_parts.append(chunk.text.strip())
     return " ".join(final_parts).strip()
@@ -69,7 +69,7 @@ async def process_telnyx_media_stream(
     call_sid: str | None,
 ) -> None:
     """
-    Accept Telnyx TeXML Stream WebSocket, transcribe with Deepgram, push next TeXML.
+    Accept Telnyx TeXML Stream WebSocket, transcribe via STT plugin, push next TeXML.
     Falls back to TeXML Gather on the next turn if streaming is unavailable or fails.
     """
     await websocket.accept()
@@ -84,6 +84,11 @@ async def process_telnyx_media_stream(
         await websocket.close(code=1008, reason="Missing call_sid")
         return
 
+    stt_plugin = get_speech_to_text_plugin()
+    if stt_plugin is None:
+        await websocket.close(code=1008, reason="Speech-to-text not configured")
+        return
+
     db = SessionLocal()
     try:
         country = _voice_country_for_call(db, call_log_id)
@@ -95,7 +100,7 @@ async def process_telnyx_media_stream(
         transcript = await asyncio.wait_for(
             _collect_final_transcript(
                 _audio_from_telnyx(websocket),
-                settings.deepgram_api_key,
+                stt_plugin,
                 language=language,
             ),
             timeout=STREAM_LISTEN_SECONDS,
@@ -104,7 +109,7 @@ async def process_telnyx_media_stream(
         logger.info("Media stream listen timed out", extra={"call_log_id": call_log_id})
         transcript = ""
     except Exception:
-        logger.exception("Deepgram stream transcription failed", extra={"call_log_id": call_log_id})
+        logger.exception("Stream transcription failed", extra={"call_log_id": call_log_id})
         transcript = ""
     finally:
         try:
@@ -114,6 +119,14 @@ async def process_telnyx_media_stream(
 
     db = SessionLocal()
     try:
+        from app.models import CallLog
+
+        call_log = db.query(CallLog).filter(CallLog.id == call_log_id).first()
+        business = (
+            db.query(Business).filter(Business.id == call_log.business_id).first()
+            if call_log
+            else None
+        )
         if transcript:
             texml = await handle_gather_result(db, call_log_id, transcript, None)
         else:
@@ -124,7 +137,12 @@ async def process_telnyx_media_stream(
                 call_sid=call_sid,
                 country=country,
             )
-        telnyx_client.update_call_texml(call_sid, texml)
+        call_service = get_call_service(
+            business=business,
+            db=db,
+            resource_provider=call_log.provider if call_log else None,
+        )
+        await call_service.answer_call(call_sid, texml=texml)
         logger.info(
             "Stream turn completed",
             extra={"call_log_id": call_log_id, "transcript_len": len(transcript)},
@@ -139,7 +157,11 @@ async def process_telnyx_media_stream(
                 call_sid=call_sid,
                 country=country,
             )
-            telnyx_client.update_call_texml(call_sid, fallback)
+            await get_call_service(
+                business=business,
+                db=db,
+                resource_provider=call_log.provider if call_log else None,
+            ).answer_call(call_sid, texml=fallback)
         except Exception:
             logger.exception("Stream fallback TeXML failed", extra={"call_log_id": call_log_id})
     finally:

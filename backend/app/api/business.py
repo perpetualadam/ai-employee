@@ -13,8 +13,10 @@ from app.schemas import (
     BusinessUpdate,
     EmergencyRuleCreate,
     EmergencyRuleResponse,
+    ProviderSettingsResponse,
 )
 from app.services.business_service import BusinessServiceManager
+from app.services.provider_settings_service import ProviderSettingsService
 
 router = APIRouter(prefix="/business", tags=["business"])
 
@@ -38,6 +40,13 @@ def update_business(
     db: Session = Depends(get_db),
 ) -> Business:
     return BusinessServiceManager.update_business(db, business, data)
+
+
+@router.get("/provider-settings", response_model=ProviderSettingsResponse)
+def get_provider_settings(
+    business: Business = Depends(get_user_primary_business),
+) -> dict:
+    return ProviderSettingsService.get_settings(business)
 
 
 @router.get("/services", response_model=list[BusinessServiceResponse])

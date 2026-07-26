@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import MagicMock, patch
 
 from app.integrations.registry import (
     get_ai_provider,
@@ -16,7 +17,16 @@ from app.integrations.registry import (
 
 
 class IntegrationRegistrySpecification(unittest.TestCase):
-    def test_registry_returns_provider_instances(self) -> None:
+    @patch("app.integrations.registry.get_settings")
+    def test_registry_returns_provider_instances(self, settings_mock) -> None:
+        settings_mock.return_value = MagicMock(
+            groq_api_key="test-key",
+            groq_model="test-model",
+            ai_provider="groq",
+            voice_provider="telnyx",
+            sms_provider="telnyx",
+            email_provider="dev",
+        )
         self.assertIn(get_sms_provider().provider_name, ("telnyx", "dev_log"))
         self.assertEqual(get_voice_call_control().provider_name, "telnyx")
         self.assertEqual(get_voice_webhook_adapter().provider_name, "telnyx")

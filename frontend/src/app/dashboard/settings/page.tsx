@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { CopySnippet } from "@/components/copy-snippet";
 import { DashboardShell } from "@/components/dashboard/shell";
 import { PhoneProvisioningPanel } from "@/components/phone-provisioning-panel";
+import { ProviderConfigPanel } from "@/components/provider-config-panel";
+import { TimezoneSelect } from "@/components/timezone-select";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -125,15 +127,10 @@ export default function SettingsPage() {
                 Calls transfer here when the AI escalates to a human.
               </p>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="timezone">Timezone</Label>
-              <Input
-                id="timezone"
-                value={form.timezone}
-                onChange={(e) => setForm({ ...form, timezone: e.target.value })}
-                placeholder="America/New_York"
-              />
-            </div>
+            <TimezoneSelect
+              value={form.timezone}
+              onChange={(timezone) => setForm({ ...form, timezone })}
+            />
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -151,6 +148,15 @@ export default function SettingsPage() {
             </Button>
           </CardContent>
         </Card>
+
+        {business ? (
+          <ProviderConfigPanel
+            country={business.country}
+            onSaved={async () => {
+              await refreshBusiness();
+            }}
+          />
+        ) : null}
 
         <Card>
           <CardHeader>

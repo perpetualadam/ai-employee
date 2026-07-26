@@ -1,53 +1,45 @@
-"""Stripe billing integration — checkout, portal, webhooks."""
+"""Billing integration — checkout, portal, webhooks via payment plugin."""
+
+from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
 
-import stripe
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.dependencies.plugins import get_payment_plugin
 from app.models import Business, User
 from app.models.enums import PlanTier, SubscriptionStatus
+from app.plugins.interfaces import PaymentPlugin
 
 logger = logging.getLogger(__name__)
 
 
-def _configure_stripe() -> None:
-    settings = get_settings()
-    if not settings.stripe_secret_key:
-        raise RuntimeError("STRIPE_SECRET_KEY is not configured")
-    stripe.api_key = settings.stripe_secret_key
-
-
-def _price_id_for_plan(plan: PlanTier) -> str:
-    settings = get_settings()
-    if plan == PlanTier.PRO:
-        if not settings.stripe_price_pro:
-            raise ValueError("STRIPE_PRICE_PRO is not configured")
-        return settings.stripe_price_pro
-    if not settings.stripe_price_starter:
-        raise ValueError("STRIPE_PRICE_STARTER is not configured")
-    return settings.stripe_price_starter
+def _require_payment_plugin() -> PaymentPlugin:
+    plugin = get_payment_plugin()
+    if plugin is None or not plugin.is_payment_configured():
+        raise RuntimeError("Payment plugin is not configured")
+    return plugin
 
 
 class BillingService:
     @staticmethod
-    def get_or_create_stripe_customer(db: Session, business: Business, user: User) -> str:
-        _configure_stripe()
+    def get_or_create_customer(db: Session, business: Business, user: User) -> str:
+        payment = _require_payment_plugin()
 
         if business.stripe_customer_id:
             return business.stripe_customer_id
 
-        customer = stripe.Customer.create(
+        customer_id = payment.create_customer(
             email=user.email,
             name=business.name,
             metadata={"business_id": business.id, "user_id": user.id},
         )
-        business.stripe_customer_id = customer.id
+        business.stripe_customer_id = customer_id
         db.commit()
-        logger.info("Stripe customer created", extra={"business_id": business.id})
-        return customer.id
+        logger.info("Payment customer created", extra={"business_id": business.id})
+        return customer_id
 
     @staticmethod
     def create_checkout_session(
@@ -56,52 +48,41 @@ class BillingService:
         user: User,
         plan: PlanTier,
     ) -> str:
-        _configure_stripe()
+        payment = _require_payment_plugin()
         settings = get_settings()
 
-        customer_id = BillingService.get_or_create_stripe_customer(db, business, user)
-        price_id = _price_id_for_plan(plan)
+        customer_id = BillingService.get_or_create_customer(db, business, user)
 
-        session = stripe.checkout.Session.create(
-            customer=customer_id,
-            mode="subscription",
-            line_items=[{"price": price_id, "quantity": 1}],
+        return payment.create_checkout_session(
+            customer_id=customer_id,
+            plan_tier=plan.value,
             success_url=f"{settings.frontend_url}/dashboard/billing?success=true",
             cancel_url=f"{settings.frontend_url}/dashboard/billing?canceled=true",
             metadata={"business_id": business.id, "plan_tier": plan.value},
-            subscription_data={"metadata": {"business_id": business.id, "plan_tier": plan.value}},
         )
-        return session.url
 
     @staticmethod
     def create_portal_session(db: Session, business: Business) -> str:
-        _configure_stripe()
+        payment = _require_payment_plugin()
         settings = get_settings()
 
         if not business.stripe_customer_id:
             raise ValueError("No billing account found. Subscribe first.")
 
-        session = stripe.billing_portal.Session.create(
-            customer=business.stripe_customer_id,
+        return payment.create_portal_session(
+            customer_id=business.stripe_customer_id,
             return_url=f"{settings.frontend_url}/dashboard/billing",
         )
-        return session.url
 
     @staticmethod
     def handle_webhook_event(db: Session, payload: bytes, signature: str) -> None:
-        _configure_stripe()
-        settings = get_settings()
-        if not settings.stripe_webhook_secret:
-            raise RuntimeError("STRIPE_WEBHOOK_SECRET is not configured")
-
-        event = stripe.Webhook.construct_event(
-            payload, signature, settings.stripe_webhook_secret
-        )
+        payment = _require_payment_plugin()
+        event = payment.construct_webhook_event(payload, signature)
 
         event_type = event["type"]
         data = event["data"]["object"]
 
-        logger.info("Stripe webhook received", extra={"type": event_type})
+        logger.info("Payment webhook received", extra={"type": event_type})
 
         if event_type == "checkout.session.completed":
             BillingService._handle_checkout_completed(db, data)
@@ -155,14 +136,19 @@ class BillingService:
 
         db.commit()
         logger.info("Checkout completed", extra={"business_id": business.id})
+        from app.plugins.publishers import publish_payment_received
+
+        publish_payment_received(
+            business_id=business.id,
+            customer_id=business.stripe_customer_id,
+            plan_tier=plan if plan in ("starter", "pro") else None,
+        )
 
     @staticmethod
     def _get_stripe_business_from_session(db: Session, session: dict) -> Business | None:
         return BillingService._get_business_by_stripe(
             db, session.get("customer"), session.get("metadata")
         )
-
-    # Fix typo in method name above - I used _get_bripe_business - need to fix
 
     @staticmethod
     def _handle_subscription_updated(db: Session, subscription: dict) -> None:

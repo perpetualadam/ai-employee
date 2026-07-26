@@ -67,3 +67,24 @@ async def parse_inbound_sms_event(request: Request) -> dict[str, str] | None:
         return None
 
     return {"from": from_number, "to": to_number, "text": text}
+
+
+def parse_telnyx_sms_payload(payload: dict[str, Any]) -> dict[str, str] | None:
+    """Normalize a parsed Telnyx messaging webhook dict (for provider adapters)."""
+    data = payload.get("data") or payload
+    event_type = data.get("event_type") or payload.get("event_type")
+    if event_type != "message.received":
+        return None
+
+    message = data.get("payload") or data
+    text = (message.get("text") or "").strip()
+    from_obj = message.get("from") or {}
+    to_list = message.get("to") or []
+    to_obj = to_list[0] if to_list else {}
+
+    from_number = from_obj.get("phone_number") or from_obj.get("number") or ""
+    to_number = to_obj.get("phone_number") or to_obj.get("number") or ""
+
+    if not from_number or not to_number or not text:
+        return None
+    return {"from": from_number, "to": to_number, "text": text}

@@ -5,6 +5,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { PhoneProvisioningPanel } from "@/components/phone-provisioning-panel";
+import { TimezoneSelect } from "@/components/timezone-select";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -307,14 +308,12 @@ function OnboardingWizard() {
                     Sets address format, phone rules, and regional compliance for your trade.
                   </p>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="tz">Timezone</Label>
-                  <Input
-                    id="tz"
-                    value={form.timezone}
-                    onChange={(e) => setForm({ ...form, timezone: e.target.value })}
-                  />
-                </div>
+                <TimezoneSelect
+                  id="tz"
+                  value={form.timezone}
+                  onChange={(timezone) => setForm({ ...form, timezone })}
+                  hint="Auto-filled when you pick a country — adjust if your shop is in a different timezone (e.g. Arizona or Western Australia)."
+                />
                 <Button onClick={handleStep1Next} disabled={saving}>
                   {saving ? "Saving..." : "Continue"}
                 </Button>

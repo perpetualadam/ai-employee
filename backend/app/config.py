@@ -41,8 +41,18 @@ class Settings(BaseSettings):
     telnyx_phone_number: str = ""
     telnyx_messaging_profile_id: str = ""
     telnyx_texml_connection_id: str = ""
-    sms_provider: str = "telnyx"  # telnyx | dev | auto (country-based pick)
-    voice_provider: str = "telnyx"  # telnyx | auto — swap voice CPaaS via integrations/adapters
+    number_provisioning_provider: str = "auto"
+    telephony_provider: str = "auto"
+    regulatory_provider: str = "auto"
+    voice_ai_provider: str = "auto"
+    messaging_provider: str = "auto"
+    storage_provider: str = "auto"
+    storage_local_path: str = "storage"
+    openai_api_key: str = ""
+    resend_api_key: str = ""
+    resend_from_email: str = ""
+    sms_provider: str = "auto"  # auto | telnyx | dev — resolved via ProviderConfiguration
+    voice_provider: str = "auto"  # auto | explicit CPaaS — resolved via ProviderConfiguration
     email_provider: str = "auto"  # auto | smtp | dev
     public_api_url: str = "http://localhost:8000"
     deepgram_api_key: str = ""
@@ -54,6 +64,12 @@ class Settings(BaseSettings):
     stripe_price_starter: str = ""
     stripe_price_pro: str = ""
     frontend_url: str = "http://localhost:3000"
+
+    # Alternate CPaaS credentials (stub adapters — configure to enable)
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    vonage_api_key: str = ""
+    vonage_api_secret: str = ""
 
     # P4 — reminders, monitoring, internal jobs
     reminders_enabled: bool = True

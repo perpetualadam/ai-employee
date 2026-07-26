@@ -45,6 +45,23 @@ class BusinessServiceManager:
             else:
                 business.escalation_phone = None
 
+        provider_config = update_data.pop("provider_config", None)
+        if provider_config is not None:
+            from app.domain.provider_config import merge_provider_config
+            from app.providers.factory import list_provider_registry
+
+            try:
+                business.provider_config = merge_provider_config(
+                    business.provider_config,
+                    provider_config,
+                    registered=list_provider_registry(),
+                )
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=str(exc),
+                ) from exc
+
         for field, value in update_data.items():
             setattr(business, field, value)
         db.commit()

@@ -8,11 +8,14 @@ from slowapi.errors import RateLimitExceeded
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api import appointments, auth, billing, business, calls, conversations, customers, dashboard, internal, jobs, onboarding, phone, public, receptionist, sms, voice
+from app.api import admin_providers, admin_telecom
 from app.config import get_settings
 from app.core.logging_config import setup_logging
 from app.core.monitoring import check_database, init_sentry, sentry_active
 from app.core.rate_limit import _rate_limit_exceeded_handler, limiter
 from app.database import get_db
+import app.plugins.bootstrap  # noqa: F401 — discover and register plugins at startup
+import app.providers.bootstrap  # noqa: F401 — bridge plugins to provider registry
 
 settings = get_settings()
 setup_logging(debug=settings.debug)
@@ -57,6 +60,8 @@ app.include_router(calls.router, prefix=settings.api_v1_prefix)
 app.include_router(internal.router, prefix=settings.api_v1_prefix)
 app.include_router(billing.router, prefix=settings.api_v1_prefix)
 app.include_router(onboarding.router, prefix=settings.api_v1_prefix)
+app.include_router(admin_telecom.router, prefix=settings.api_v1_prefix)
+app.include_router(admin_providers.router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health/live")
@@ -76,20 +81,36 @@ def health_ready(db=Depends(get_db)) -> dict:
 
 @app.get("/health")
 def health_check(db=Depends(get_db)) -> dict:
+    from app.providers.factory import (
+        get_factory,
+        get_messaging_provider,
+        get_number_provisioning_provider,
+        get_regulatory_provider,
+        get_storage_provider,
+        get_telephony_provider,
+        get_voice_ai_provider,
+        list_provider_registry,
+    )
+    from app.services.voice_mode_service import VoiceModeService
+
     from app.integrations.registry import (
         get_email_provider,
         get_sms_provider,
         get_voice_call_control,
         list_registered_integrations,
     )
-    from app.services.voice_mode_service import VoiceModeService
-    from app.voice import telnyx_client
 
     sms = get_sms_provider()
     email = get_email_provider()
     voice = get_voice_call_control()
     settings = get_settings()
     db_status = check_database(db)
+    number_prov = get_number_provisioning_provider()
+    telephony = get_telephony_provider()
+    regulatory = get_regulatory_provider()
+    messaging = get_messaging_provider()
+    voice_ai = get_voice_ai_provider()
+    storage = get_storage_provider()
     return {
         "status": "ok" if db_status.get("ok") else "degraded",
         "database": db_status,
@@ -101,10 +122,22 @@ def health_check(db=Depends(get_db)) -> dict:
             "email_configured": email.is_configured(),
             "voice": voice.provider_name,
             "voice_configured": voice.is_configured(),
-            "outbound_configured": telnyx_client.is_outbound_call_configured(),
-            "phone_provisioning_configured": telnyx_client.is_phone_provisioning_configured(),
+            "number_provisioning": number_prov.provider_name,
+            "number_provisioning_configured": number_prov.is_configured(),
+            "telephony": telephony.provider_name,
+            "telephony_configured": telephony.is_configured(),
+            "regulatory": regulatory.provider_name,
+            "regulatory_configured": regulatory.is_configured(),
+            "messaging": messaging.provider_name,
+            "messaging_configured": messaging.is_configured(),
+            "voice_ai": voice_ai.provider_name,
+            "voice_ai_configured": voice_ai.is_configured(),
+            "storage": storage.provider_name,
+            "storage_configured": storage.is_configured(),
         },
         "voice_mode": VoiceModeService.status(),
         "monitoring": {"sentry": sentry_active()},
         "registered_adapters": list_registered_integrations(),
+        "provider_registry": list_provider_registry(),
+        "provider_health": get_factory().health_check(),
     }

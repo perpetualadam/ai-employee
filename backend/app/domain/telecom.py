@@ -107,12 +107,19 @@ class NumberSearchProfile:
         passes (no client-side validation).
     prefix_example:
         Example prefix string shown as placeholder in the UI.
+    default_phone_number_type:
+        Telnyx ``filter[phone_number_type]`` when the client does not specify one
+        (e.g. ``mobile`` for UK SMS + voice).
+    available_phone_number_types:
+        Optional ``(value, label)`` pairs for a UI toggle (e.g. mobile vs local).
     """
 
     prefix_param: str | None  # Telnyx query param name, or None if not supported
     prefix_label: str
     prefix_digits: tuple[int, ...]  # valid digit counts; () = unchecked
     prefix_example: str
+    default_phone_number_type: str | None = None
+    available_phone_number_types: tuple[tuple[str, str], ...] = ()
 
 
 # Maps each region/country code to number-search parameters.
@@ -131,12 +138,17 @@ NUMBER_SEARCH_PROFILES: dict[str, NumberSearchProfile] = {
         prefix_digits=(3,),
         prefix_example="416",
     ),
-    # UK — Telnyx uses locality filter for GB numbers.
+    # UK — mobile numbers (07…) are standard for SMS + voice; local/geographic optional.
     "GB": NumberSearchProfile(
         prefix_param="filter[locality]",
-        prefix_label="City / area",
-        prefix_digits=(),  # free text
+        prefix_label="City / area (local numbers only)",
+        prefix_digits=(),
         prefix_example="London",
+        default_phone_number_type="mobile",
+        available_phone_number_types=(
+            ("mobile", "Mobile (07…) — recommended for UK SMS & voice"),
+            ("local", "Local / geographic (01/02…)"),
+        ),
     ),
     # Australia — 2-digit STD area code.
     "AU": NumberSearchProfile(

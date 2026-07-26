@@ -113,31 +113,35 @@ def search_available_phone_numbers(
     *,
     prefix: str | None = None,
     limit: int = 10,
+    number_type: str | None = None,
 ) -> list[dict[str, Any]]:
     """
     Search purchasable numbers with voice + SMS for *any* supported country.
 
     The correct Telnyx filter key is resolved from the domain
-    ``NumberSearchProfile`` for the requested country, so UK businesses get a
-    ``filter[locality]`` search, US/CA/AU businesses get
-    ``filter[national_destination_code]``, and countries without a prefix
-    filter receive a plain country-level search.  No US-centric assumptions.
+    ``NumberSearchProfile`` for the requested country. UK defaults to
+    ``filter[phone_number_type]=mobile`` for SMS-friendly 07 numbers; use
+    ``number_type=local`` for geographic numbers with optional locality filter.
     """
     from app.domain.telecom import get_number_search_profile  # avoid circular at module level
 
     normalised_country = country_code.upper().strip()
+    search_profile = get_number_search_profile(normalised_country)
+    effective_type = number_type or search_profile.default_phone_number_type
+
     params: dict[str, str | int] = {
         "filter[country_code]": normalised_country,
         "filter[features]": "voice,sms",
         "filter[limit]": min(max(limit, 1), 25),
     }
 
-    if prefix:
-        search_profile = get_number_search_profile(normalised_country)
-        if search_profile.prefix_param is not None:
+    if effective_type:
+        params["filter[phone_number_type]"] = effective_type
+
+    if prefix and search_profile.prefix_param is not None:
+        # UK mobile inventory is country-wide — locality filter does not apply.
+        if not (normalised_country == "GB" and effective_type == "mobile"):
             params[search_profile.prefix_param] = prefix.strip()
-        # If prefix_param is None for this country the prefix is silently
-        # ignored (Telnyx has no suitable filter for it).
 
     data = _request("GET", "/available_phone_numbers", params=params)
     items = data.get("data") or []

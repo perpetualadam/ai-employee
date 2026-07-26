@@ -1,6 +1,8 @@
-"""SMS provider abstraction — swap Telnyx, Twilio, etc. without changing call flow."""
+"""SMS provider abstraction — swap CPaaS vendors without changing call flow."""
 
 from abc import ABC, abstractmethod
+
+from app.providers.capabilities import ProviderCapabilities
 
 
 class SmsProvider(ABC):
@@ -11,6 +13,10 @@ class SmsProvider(ABC):
 
     @abstractmethod
     def is_configured(self) -> bool:
+        ...
+
+    @abstractmethod
+    def get_capabilities(self) -> ProviderCapabilities:
         ...
 
     @abstractmethod

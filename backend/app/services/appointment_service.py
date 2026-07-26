@@ -200,6 +200,14 @@ class AppointmentService:
             "Appointment booked",
             extra={"business_id": business.id, "appointment_id": appointment.id},
         )
+        from app.plugins.publishers import publish_booking_created
+
+        publish_booking_created(
+            business_id=business.id,
+            appointment_id=appointment.id,
+            customer_id=appointment.customer_id,
+            start_time=appointment.start_time.isoformat(),
+        )
         return appointment
 
     @staticmethod
@@ -246,10 +254,14 @@ class AppointmentService:
 
         db.commit()
         db.refresh(appointment)
-        return appointment
+        from app.plugins.publishers import publish_booking_updated
 
-    @staticmethod
-    def cancel_appointment(db: Session, business_id: str, appointment: Appointment) -> Appointment:
+        publish_booking_updated(
+            business_id=business.id,
+            appointment_id=appointment.id,
+            status=appointment.status.value if hasattr(appointment.status, "value") else str(appointment.status),
+        )
+        return appointment
         if appointment.status == AppointmentStatus.CANCELLED:
             raise ValueError("Appointment is already cancelled")
 
@@ -267,6 +279,13 @@ class AppointmentService:
         logger.info(
             "Appointment cancelled",
             extra={"business_id": business_id, "appointment_id": appointment.id},
+        )
+        from app.plugins.publishers import publish_booking_updated
+
+        publish_booking_updated(
+            business_id=business_id,
+            appointment_id=appointment.id,
+            status="cancelled",
         )
         return appointment
 

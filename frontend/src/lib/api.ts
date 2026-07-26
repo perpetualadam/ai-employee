@@ -64,13 +64,15 @@ export const api = {
 
   getMe: () => request<User>("/auth/me"),
   getBusiness: () => request<Business>("/business"),
-  updateBusiness: (data: Partial<Business>) =>
+  getProviderSettings: () => request<ProviderSettings>("/business/provider-settings"),
+  updateBusiness: (data: Partial<Business> & { provider_config?: Record<string, string> }) =>
     request<Business>("/business", { method: "PATCH", body: JSON.stringify(data) }),
   getPhoneProvisioningStatus: () =>
     request<PhoneProvisioningStatus>("/business/phone/status"),
-  searchAvailablePhoneNumbers: (prefix?: string) => {
+  searchAvailablePhoneNumbers: (prefix?: string, numberType?: string) => {
     const qs = new URLSearchParams();
     if (prefix) qs.set("prefix", prefix);
+    if (numberType) qs.set("number_type", numberType);
     const query = qs.toString();
     return request<PhoneSearchResult>(
       `/business/phone/available${query ? `?${query}` : ""}`,
@@ -80,6 +82,33 @@ export const api = {
     request<PhoneProvisionResult>("/business/phone/provision", {
       method: "POST",
       body: JSON.stringify({ phone_number }),
+    }),
+  getVerificationRequirements: () =>
+    request<VerificationRequirements>("/business/phone/verification/requirements"),
+  getVerificationStatus: () =>
+    request<VerificationStatus>("/business/phone/verification/status"),
+  uploadVerificationDocument: async (documentType: string, file: File) => {
+    const form = new FormData();
+    form.append("document_type", documentType);
+    form.append("file", file);
+    const token = getToken();
+    const headers: HeadersInit = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(`${API_URL}/business/phone/verification/documents`, {
+      method: "POST",
+      headers,
+      body: form,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new ApiError(formatErrorDetail(body.detail), res.status);
+    }
+    return res.json() as Promise<VerificationDocument>;
+  },
+  submitVerification: (data: VerificationSubmitInput) =>
+    request<VerificationStatus>("/business/phone/verification/submit", {
+      method: "POST",
+      body: JSON.stringify(data),
     }),
   placeOutboundCall: (data: { customer_id?: string; phone?: string; reason?: string }) =>
     request<OutboundCallResult>("/calls/outbound", {
@@ -246,10 +275,18 @@ export interface Business {
   phone_provisioned?: boolean;
   reminders_enabled?: boolean;
   escalation_phone: string | null;
+  provider_config?: Record<string, string>;
   public_slug: string | null;
   onboarding_completed: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface ProviderSettings {
+  provider_config: Record<string, string>;
+  country_defaults: Record<string, string>;
+  global_defaults: Record<string, string>;
+  available: Record<string, string[]>;
 }
 
 export interface TradeOption {
@@ -277,6 +314,45 @@ export interface PhoneProvisioningStatus {
   prefix_example?: string;
   prefix_supported?: boolean;
   example_phone?: string;
+  default_number_type?: string | null;
+  number_type_options?: { value: string; label: string }[];
+  verification_required?: boolean;
+  verification_status?: string | null;
+  verification_approved?: boolean;
+}
+
+export interface VerificationRequirements {
+  country_code: string;
+  country_name?: string;
+  verification_required: boolean;
+  requires_end_user?: boolean;
+  requires_regulatory_bundle?: boolean;
+  required_documents: string[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface VerificationDocument {
+  id: string;
+  document_type: string;
+  verification_status: string;
+  storage_key: string;
+  provider_document_id?: string | null;
+  created_at: string;
+}
+
+export interface VerificationStatus {
+  country_code: string;
+  status: string;
+  provider_end_user_id?: string | null;
+  provider_bundle_id?: string | null;
+  last_checked?: string | null;
+  uploaded_documents: VerificationDocument[];
+}
+
+export interface VerificationSubmitInput {
+  business_name: string;
+  contact_email?: string;
+  address?: string;
 }
 
 export interface AvailablePhoneNumber {
@@ -291,6 +367,8 @@ export interface PhoneSearchResult {
   prefix_label: string;   // e.g. "Area code" (US), "City / area" (GB), "STD area code" (AU)
   prefix_example: string; // placeholder for the UI input
   prefix_supported?: boolean;
+  number_type?: string | null;
+  number_type_options?: { value: string; label: string }[];
 }
 
 export interface PhoneProvisionResult {
