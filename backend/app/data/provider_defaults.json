@@ -51,21 +51,98 @@
   },
   "priority": {
     "GB": {
-      "telephony": ["telnyx", "twilio", "vonage"],
-      "numbers": ["telnyx", "twilio", "vonage"],
-      "regulatory": ["telnyx", "twilio", "vonage"],
-      "messaging": ["telnyx", "twilio", "vonage"]
+      "telephony": [
+        "telnyx",
+        "twilio",
+        "vonage",
+        "plivo",
+        "signalwire",
+        "voipms"
+      ],
+      "numbers": [
+        "telnyx",
+        "twilio",
+        "vonage",
+        "plivo",
+        "signalwire",
+        "voipms"
+      ],
+      "regulatory": [
+        "telnyx",
+        "twilio",
+        "vonage",
+        "plivo",
+        "signalwire",
+        "voipms"
+      ],
+      "messaging": [
+        "telnyx",
+        "twilio",
+        "vonage",
+        "plivo",
+        "signalwire",
+        "voipms"
+      ]
     },
     "US": {
-      "telephony": ["twilio", "telnyx", "vonage"],
-      "numbers": ["twilio", "telnyx", "vonage"],
-      "regulatory": ["twilio", "telnyx", "vonage"],
-      "messaging": ["twilio", "telnyx", "vonage"]
+      "telephony": [
+        "twilio",
+        "telnyx",
+        "vonage",
+        "plivo",
+        "signalwire",
+        "voipms"
+      ],
+      "numbers": [
+        "twilio",
+        "telnyx",
+        "vonage",
+        "plivo",
+        "signalwire",
+        "voipms"
+      ],
+      "regulatory": [
+        "twilio",
+        "telnyx",
+        "vonage",
+        "plivo",
+        "signalwire",
+        "voipms"
+      ],
+      "messaging": [
+        "twilio",
+        "telnyx",
+        "vonage",
+        "plivo",
+        "signalwire",
+        "voipms"
+      ]
     },
     "AU": {
-      "telephony": ["telnyx", "twilio", "vonage"],
-      "numbers": ["telnyx", "twilio", "vonage"],
-      "messaging": ["telnyx", "twilio", "vonage"]
+      "telephony": [
+        "telnyx",
+        "twilio",
+        "vonage",
+        "plivo",
+        "signalwire",
+        "voipms"
+      ],
+      "numbers": [
+        "telnyx",
+        "twilio",
+        "vonage",
+        "plivo",
+        "signalwire",
+        "voipms"
+      ],
+      "messaging": [
+        "telnyx",
+        "twilio",
+        "vonage",
+        "plivo",
+        "signalwire",
+        "voipms"
+      ]
     }
   },
   "weights": {
@@ -77,14 +154,51 @@
     "local": 10,
     "local_sms": 10,
     "dev_log": 5,
-    "mock": 1
+    "mock": 1,
+    "plivo": 88,
+    "signalwire": 87,
+    "voipms": 80
   },
   "failover": {
-    "telephony": ["telnyx", "twilio", "vonage"],
-    "numbers": ["telnyx", "twilio", "vonage"],
-    "regulatory": ["telnyx", "twilio", "vonage"],
-    "voice": ["openai"],
-    "messaging": ["composite", "local", "telnyx"],
-    "storage": ["local"]
+    "telephony": [
+      "telnyx",
+      "twilio",
+      "vonage",
+      "plivo",
+      "signalwire",
+      "voipms"
+    ],
+    "numbers": [
+      "telnyx",
+      "twilio",
+      "vonage",
+      "plivo",
+      "signalwire",
+      "voipms"
+    ],
+    "regulatory": [
+      "telnyx",
+      "twilio",
+      "vonage",
+      "plivo",
+      "signalwire",
+      "voipms"
+    ],
+    "voice": [
+      "openai"
+    ],
+    "messaging": [
+      "composite",
+      "local",
+      "telnyx",
+      "twilio",
+      "vonage",
+      "plivo",
+      "signalwire",
+      "voipms"
+    ],
+    "storage": [
+      "local"
+    ]
   }
 }

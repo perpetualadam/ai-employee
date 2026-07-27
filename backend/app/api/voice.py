@@ -44,6 +44,17 @@ def beep_tone() -> FileResponse:
     return FileResponse(_BEEP_WAV, media_type="audio/wav")
 
 
+@router.get("/plivo/xml")
+def plivo_pushed_xml(call_uuid: str = Query(...)) -> Response:
+    """Serve stashed PlivoXML for live call transfers (Plivo aleg_url)."""
+    from app.voice import plivo_client
+
+    xml = plivo_client.pop_call_xml(call_uuid) or plivo_client.peek_call_xml(call_uuid)
+    if not xml:
+        xml = '<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>'
+    return Response(content=xml, media_type="application/xml")
+
+
 @router.api_route("/inbound", methods=["GET", "POST"])
 async def inbound_call(
     request: Request,

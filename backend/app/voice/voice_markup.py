@@ -503,10 +503,144 @@ class VonageVoiceMarkup(VoiceMarkupBuilder):
         return json.dumps(actions)
 
 
+class PlivoVoiceMarkup(VoiceMarkupBuilder):
+    content_type = "application/xml"
+
+    @property
+    def provider_name(self) -> str:
+        return "plivo"
+
+    def is_configured(self) -> bool:
+        from app.voice import plivo_client
+
+        return plivo_client.is_plivo_configured()
+
+    def build_greeting(
+        self,
+        business: Business,
+        base_url: str,
+        call_log_id: str,
+        *,
+        call_sid: str | None = None,
+    ) -> str:
+        trade = resolve_trade_context(business)
+        greeting = (
+            f"Thank you for calling {business.name}. "
+            "I'm the AI receptionist. "
+            f"After the tone, tell me what's going on — for example {trade.voice_greeting_example}."
+        )
+        return self.build_say_and_gather(
+            greeting,
+            base_url,
+            call_log_id,
+            call_sid=call_sid,
+            country=business.country,
+        )
+
+    def build_say_and_gather(
+        self,
+        message: str,
+        base_url: str,
+        call_log_id: str,
+        *,
+        call_sid: str | None = None,
+        country: str | None = None,
+    ) -> str:
+        from app.services.voice_mode_service import VoiceModeService
+        from app.voice.texml_builder import duplex_stream_url
+
+        settings = get_settings()
+        urls = _voice_urls(base_url, call_log_id)
+        gather_url = escape(urls["gather"], quote=True)
+        locale = resolve_voice_locale(country)
+        if call_sid and VoiceModeService.effective_mode() == "duplex":
+            stream_url = escape(duplex_stream_url(call_log_id, call_sid), quote=True)
+            return (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                "<Response>"
+                f'<Speak language="{locale.language}">{escape(message, quote=False)}</Speak>'
+                f'<Stream bidirection="true" contentType="audio/x-l16;rate=16000">{stream_url}</Stream>'
+                "</Response>"
+            )
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            "<Response>"
+            f'<Speak language="{locale.language}">{escape(message, quote=False)}</Speak>'
+            f'<GetInput action="{gather_url}" method="POST" inputType="speech" '
+            f'speechEndTimeout="{settings.voice_gather_speech_timeout}" '
+            f'executionTimeout="{settings.voice_gather_timeout}" '
+            f'language="{locale.language}"/>'
+            f'<Speak language="{locale.language}">I did not catch that. Goodbye!</Speak>'
+            "<Hangup/>"
+            "</Response>"
+        )
+
+    def build_hangup(self, message: str, *, country: str | None = None) -> str:
+        locale = resolve_voice_locale(country)
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            "<Response>"
+            f'<Speak language="{locale.language}">{escape(message, quote=False)}</Speak>'
+            "<Hangup/>"
+            "</Response>"
+        )
+
+    def build_transfer(
+        self,
+        escalation_phone: str,
+        message: str | None = None,
+        *,
+        country: str | None = None,
+    ) -> str:
+        locale = resolve_voice_locale(country)
+        msg = message or "Please hold while I connect you with a team member."
+        phone = escape(escalation_phone.strip(), quote=False)
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            "<Response>"
+            f'<Speak language="{locale.language}">{escape(msg, quote=False)}</Speak>'
+            f"<Dial><Number>{phone}</Number></Dial>"
+            f'<Speak language="{locale.language}">Sorry, no one is available right now.</Speak>'
+            "<Hangup/>"
+            "</Response>"
+        )
+
+    def build_empty(self) -> str:
+        return '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
+
+    def build_outbound_answer(
+        self,
+        business_name: str,
+        escalation_phone: str | None,
+        *,
+        reason: str | None = None,
+        country: str | None = None,
+    ) -> str:
+        locale = resolve_voice_locale(country)
+        intro = reason or f"Hi, this is {business_name} calling about your recent service request."
+        parts = [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            "<Response>",
+            f'<Speak language="{locale.language}">{escape(intro, quote=False)}</Speak>',
+        ]
+        if escalation_phone:
+            parts.append(f'<Speak language="{locale.language}">Connecting you now.</Speak>')
+            parts.append(
+                f"<Dial><Number>{escape(escalation_phone.strip(), quote=False)}</Number></Dial>"
+            )
+        else:
+            parts.append(
+                f'<Speak language="{locale.language}">Please call us back at your convenience.</Speak>'
+            )
+        parts.append("<Hangup/></Response>")
+        return "".join(parts)
+
+
 _BUILDERS: dict[str, type[VoiceMarkupBuilder]] = {
     "telnyx": TelnyxVoiceMarkup,
     "twilio": TwilioVoiceMarkup,
     "vonage": VonageVoiceMarkup,
+    "plivo": PlivoVoiceMarkup,
 }
 
 

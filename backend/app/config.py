@@ -79,6 +79,25 @@ class Settings(BaseSettings):
     vonage_private_key: str = ""
     vonage_phone_number: str = ""
 
+    # Plivo
+    plivo_auth_id: str = ""
+    plivo_auth_token: str = ""
+    plivo_phone_number: str = ""
+    plivo_app_id: str = ""
+
+    # SignalWire (Twilio-compatible Compatibility API / cXML)
+    signalwire_project_id: str = ""
+    signalwire_api_token: str = ""
+    signalwire_space_url: str = ""  # e.g. example.signalwire.com
+    signalwire_phone_number: str = ""
+
+    # VoIP.ms
+    voipms_api_username: str = ""
+    voipms_api_password: str = ""
+    voipms_phone_number: str = ""
+    voipms_did: str = ""
+    voipms_routing: str = ""  # account:subaccount routing target for setDIDRouting
+
     # P4 — reminders, monitoring, internal jobs
     reminders_enabled: bool = True
     reminder_hours_before: int = 24

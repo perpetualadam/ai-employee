@@ -45,7 +45,19 @@ class ProviderFactory:
             return None, {}
         return resolve_provider_context(business, db, resource_provider=resource_provider)
 
-    _KNOWN_CPAAS = frozenset({"telnyx", "twilio", "vonage", "bandwidth", "sinch", "messagebird"})
+    _KNOWN_CPAAS = frozenset(
+        {
+            "telnyx",
+            "twilio",
+            "vonage",
+            "plivo",
+            "signalwire",
+            "voipms",
+            "bandwidth",
+            "sinch",
+            "messagebird",
+        }
+    )
 
     @classmethod
     def _env_cpaas_override(cls) -> str | None:
