@@ -1,4 +1,4 @@
-"""Twilio integration adapter stubs."""
+"""Twilio integration adapters — voice control, webhooks, and inbound SMS."""
 
 from __future__ import annotations
 
@@ -19,16 +19,17 @@ class TwilioVoiceCallControl(VoiceCallControl):
         return "twilio"
 
     def is_configured(self) -> bool:
-        settings = get_settings()
-        return bool(settings.twilio_account_sid and settings.twilio_auth_token)
+        from app.voice import twilio_client
+
+        return twilio_client.is_twilio_configured()
 
     async def transfer_call(self, call_id: str, to_number: str) -> None:
         if not self.is_configured():
             raise RuntimeError("Twilio voice is not configured")
         from app.voice import twilio_client
-        from app.voice.texml_builder import build_transfer_texml
+        from app.voice.voice_markup import TwilioVoiceMarkup
 
-        twiml = build_transfer_texml(to_number)
+        twiml = TwilioVoiceMarkup().build_transfer(to_number)
         twilio_client.update_call_twiml(call_id, twiml)
         logger.info("Twilio transfer initiated", extra={"call_id": call_id, "to": to_number})
 
@@ -69,8 +70,28 @@ class TwilioSmsInboundAdapter(SmsInboundAdapter):
         form = await request.form()
         if not form:
             return None
+        params = {k: str(v) for k, v in form.items()}
+        settings = get_settings()
+        signature = request.headers.get("X-Twilio-Signature", "")
+        if settings.twilio_auth_token:
+            url = str(request.url)
+            if not validate_twilio_signature(url, params, signature, settings.twilio_auth_token):
+                logger.warning("Invalid Twilio SMS webhook signature", extra={"path": request.url.path})
+                if not settings.debug:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Invalid webhook signature",
+                    )
+        elif not settings.debug:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Twilio is not configured",
+            )
+        text = params.get("Body", "").strip()
+        if not text and not params.get("From"):
+            return None
         return {
-            "from": str(form.get("From", "")),
-            "to": str(form.get("To", "")),
-            "text": str(form.get("Body", "")),
+            "from": params.get("From", ""),
+            "to": params.get("To", ""),
+            "text": text,
         }

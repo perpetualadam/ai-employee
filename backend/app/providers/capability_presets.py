@@ -155,6 +155,136 @@ def vonage_regulatory() -> ProviderCapabilities:
     )
 
 
+def plivo_telephony() -> ProviderCapabilities:
+    return ProviderCapabilities(
+        provider_name="plivo",
+        voice=True,
+        sms=True,
+        mms=True,
+        call_transfer=True,
+        conference=True,
+        voice_webhooks=True,
+        sms_webhooks=True,
+        sip=True,
+        realtime_media_streams=True,
+        duplex_voice=True,
+        barge_in=True,
+        recordings=True,
+        local_numbers=True,
+        mobile_numbers=True,
+        toll_free_numbers=True,
+        international_numbers=True,
+        country_support=_GLOBAL,
+        supported_number_types=_STANDARD_NUMBER_TYPES,
+    )
+
+
+def plivo_numbers() -> ProviderCapabilities:
+    return ProviderCapabilities(
+        provider_name="plivo",
+        local_numbers=True,
+        mobile_numbers=True,
+        toll_free_numbers=True,
+        international_numbers=True,
+        number_porting=True,
+        country_support=_GLOBAL,
+        supported_number_types=_STANDARD_NUMBER_TYPES,
+    )
+
+
+def plivo_regulatory() -> ProviderCapabilities:
+    return ProviderCapabilities(
+        provider_name="plivo",
+        regulatory_end_users=True,
+        regulatory_bundles=True,
+        document_upload=True,
+        country_support=_GLOBAL,
+    )
+
+
+def signalwire_telephony() -> ProviderCapabilities:
+    return ProviderCapabilities(
+        provider_name="signalwire",
+        voice=True,
+        sms=True,
+        mms=True,
+        call_transfer=True,
+        conference=True,
+        voice_webhooks=True,
+        sms_webhooks=True,
+        sip=True,
+        realtime_media_streams=True,
+        duplex_voice=True,
+        barge_in=True,
+        recordings=True,
+        local_numbers=True,
+        toll_free_numbers=True,
+        international_numbers=True,
+        country_support=_GLOBAL,
+        supported_number_types=_STANDARD_NUMBER_TYPES,
+    )
+
+
+def signalwire_numbers() -> ProviderCapabilities:
+    return ProviderCapabilities(
+        provider_name="signalwire",
+        local_numbers=True,
+        toll_free_numbers=True,
+        international_numbers=True,
+        number_porting=True,
+        country_support=_GLOBAL,
+        supported_number_types=_STANDARD_NUMBER_TYPES,
+    )
+
+
+def signalwire_regulatory() -> ProviderCapabilities:
+    return ProviderCapabilities(
+        provider_name="signalwire",
+        regulatory_end_users=True,
+        regulatory_bundles=True,
+        document_upload=True,
+        country_support=_GLOBAL,
+    )
+
+
+def voipms_telephony() -> ProviderCapabilities:
+    return ProviderCapabilities(
+        provider_name="voipms",
+        voice=True,
+        sms=True,
+        mms=True,
+        call_transfer=True,
+        voice_webhooks=True,
+        sms_webhooks=True,
+        sip=True,
+        local_numbers=True,
+        toll_free_numbers=True,
+        country_support=frozenset({"US", "CA"}),
+        supported_number_types=frozenset({"local", "tollfree"}),
+    )
+
+
+def voipms_numbers() -> ProviderCapabilities:
+    return ProviderCapabilities(
+        provider_name="voipms",
+        local_numbers=True,
+        toll_free_numbers=True,
+        number_porting=True,
+        country_support=frozenset({"US", "CA"}),
+        supported_number_types=frozenset({"local", "tollfree"}),
+    )
+
+
+def voipms_regulatory() -> ProviderCapabilities:
+    return ProviderCapabilities(
+        provider_name="voipms",
+        regulatory_end_users=False,
+        regulatory_bundles=False,
+        document_upload=False,
+        country_support=frozenset({"US", "CA"}),
+    )
+
+
 def openai_voice() -> ProviderCapabilities:
     return ProviderCapabilities(
         provider_name="openai",

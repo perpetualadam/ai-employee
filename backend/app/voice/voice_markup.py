@@ -14,7 +14,6 @@ from app.models import Business
 from app.voice import telnyx_client, twilio_client, vonage_client
 from app.voice.texml_builder import (
     build_outbound_answer_texml,
-    build_say_and_duplex,
     media_stream_url,
     public_ws_url,
 )
@@ -220,7 +219,7 @@ class TwilioVoiceMarkup(VoiceMarkupBuilder):
         from app.services.voice_mode_service import VoiceModeService
 
         if call_sid and VoiceModeService.effective_mode() == "duplex":
-            return build_say_and_duplex(message, base_url, call_log_id, call_sid, country=country)
+            return self._build_say_and_duplex(message, base_url, call_log_id, call_sid, country=country)
         if call_sid and VoiceModeService.effective_mode() == "stream":
             return self._build_say_and_stream(message, base_url, call_log_id, call_sid, country=country)
 
@@ -239,6 +238,60 @@ class TwilioVoiceMarkup(VoiceMarkupBuilder):
             f'speechTimeout="{settings.voice_gather_speech_timeout}" '
             f'language="{locale.language}"/>'
             f"{_say_xml('I did not catch that. Goodbye!', country)}"
+            "<Hangup/>"
+            "</Response>"
+        )
+
+    def _build_say_and_duplex(
+        self,
+        message: str,
+        base_url: str,
+        call_log_id: str,
+        call_sid: str,
+        *,
+        country: str | None,
+    ) -> str:
+        from app.voice.texml_builder import duplex_stream_url
+
+        stream_url = escape(duplex_stream_url(call_log_id, call_sid), quote=True)
+        beep_url = escape(_voice_urls(base_url, call_log_id)["beep"], quote=True)
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            "<Response>"
+            f"{_say_xml(message, country)}"
+            f'<Play loop="1">{beep_url}</Play>'
+            f'<Connect><Stream url="{stream_url}" /></Connect>'
+            '<Pause length="3600"/>'
+            f"{_say_xml('Sorry, I did not hear anything. Goodbye!', country)}"
+            "<Hangup/>"
+            "</Response>"
+        )
+
+    def build_outbound_answer(
+        self,
+        business_name: str,
+        escalation_phone: str | None,
+        *,
+        reason: str | None = None,
+        country: str | None = None,
+    ) -> str:
+        intro = reason or f"Hi, this is {business_name} calling about your recent service request."
+        if escalation_phone:
+            return (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                "<Response>"
+                f"{_say_xml(intro, country)}"
+                f"{_say_xml('Connecting you now.', country)}"
+                f'<Dial timeout="30"><Number>{escape(escalation_phone.strip(), quote=False)}</Number></Dial>'
+                f"{_say_xml('Sorry, we could not connect you. We will try again soon.', country)}"
+                "<Hangup/>"
+                "</Response>"
+            )
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            "<Response>"
+            f"{_say_xml(intro, country)}"
+            f"{_say_xml('Please call us back at your convenience. Thank you.', country)}"
             "<Hangup/>"
             "</Response>"
         )
@@ -338,9 +391,25 @@ class VonageVoiceMarkup(VoiceMarkupBuilder):
         country: str | None = None,
     ) -> str:
         from app.services.voice_mode_service import VoiceModeService
+        from app.voice.texml_builder import duplex_stream_url
 
         if call_sid and VoiceModeService.effective_mode() == "duplex":
-            return build_say_and_duplex(message, base_url, call_log_id, call_sid, country=country)
+            stream_url = duplex_stream_url(call_log_id, call_sid)
+            return json.dumps(
+                [
+                    {"action": "talk", "text": message},
+                    {
+                        "action": "connect",
+                        "endpoint": [
+                            {
+                                "type": "websocket",
+                                "uri": stream_url,
+                                "content-type": "audio/l16;rate=16000",
+                            }
+                        ],
+                    },
+                ]
+            )
         if call_sid and VoiceModeService.effective_mode() == "stream":
             stream_url = media_stream_url(call_log_id, call_sid)
             return json.dumps(
@@ -434,10 +503,233 @@ class VonageVoiceMarkup(VoiceMarkupBuilder):
         return json.dumps(actions)
 
 
+class PlivoVoiceMarkup(VoiceMarkupBuilder):
+    content_type = "application/xml"
+
+    @property
+    def provider_name(self) -> str:
+        return "plivo"
+
+    def is_configured(self) -> bool:
+        from app.voice import plivo_client
+
+        return plivo_client.is_plivo_configured()
+
+    def build_greeting(
+        self,
+        business: Business,
+        base_url: str,
+        call_log_id: str,
+        *,
+        call_sid: str | None = None,
+    ) -> str:
+        trade = resolve_trade_context(business)
+        greeting = (
+            f"Thank you for calling {business.name}. "
+            "I'm the AI receptionist. "
+            f"After the tone, tell me what's going on — for example {trade.voice_greeting_example}."
+        )
+        return self.build_say_and_gather(
+            greeting,
+            base_url,
+            call_log_id,
+            call_sid=call_sid,
+            country=business.country,
+        )
+
+    def build_say_and_gather(
+        self,
+        message: str,
+        base_url: str,
+        call_log_id: str,
+        *,
+        call_sid: str | None = None,
+        country: str | None = None,
+    ) -> str:
+        from app.services.voice_mode_service import VoiceModeService
+        from app.voice.texml_builder import duplex_stream_url
+
+        settings = get_settings()
+        urls = _voice_urls(base_url, call_log_id)
+        gather_url = escape(urls["gather"], quote=True)
+        locale = resolve_voice_locale(country)
+        if call_sid and VoiceModeService.effective_mode() == "duplex":
+            stream_url = escape(duplex_stream_url(call_log_id, call_sid), quote=True)
+            return (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                "<Response>"
+                f'<Speak language="{locale.language}">{escape(message, quote=False)}</Speak>'
+                f'<Stream bidirection="true" contentType="audio/x-l16;rate=16000">{stream_url}</Stream>'
+                "</Response>"
+            )
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            "<Response>"
+            f'<Speak language="{locale.language}">{escape(message, quote=False)}</Speak>'
+            f'<GetInput action="{gather_url}" method="POST" inputType="speech" '
+            f'speechEndTimeout="{settings.voice_gather_speech_timeout}" '
+            f'executionTimeout="{settings.voice_gather_timeout}" '
+            f'language="{locale.language}"/>'
+            f'<Speak language="{locale.language}">I did not catch that. Goodbye!</Speak>'
+            "<Hangup/>"
+            "</Response>"
+        )
+
+    def build_hangup(self, message: str, *, country: str | None = None) -> str:
+        locale = resolve_voice_locale(country)
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            "<Response>"
+            f'<Speak language="{locale.language}">{escape(message, quote=False)}</Speak>'
+            "<Hangup/>"
+            "</Response>"
+        )
+
+    def build_transfer(
+        self,
+        escalation_phone: str,
+        message: str | None = None,
+        *,
+        country: str | None = None,
+    ) -> str:
+        locale = resolve_voice_locale(country)
+        msg = message or "Please hold while I connect you with a team member."
+        phone = escape(escalation_phone.strip(), quote=False)
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            "<Response>"
+            f'<Speak language="{locale.language}">{escape(msg, quote=False)}</Speak>'
+            f"<Dial><Number>{phone}</Number></Dial>"
+            f'<Speak language="{locale.language}">Sorry, no one is available right now.</Speak>'
+            "<Hangup/>"
+            "</Response>"
+        )
+
+    def build_empty(self) -> str:
+        return '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
+
+    def build_outbound_answer(
+        self,
+        business_name: str,
+        escalation_phone: str | None,
+        *,
+        reason: str | None = None,
+        country: str | None = None,
+    ) -> str:
+        locale = resolve_voice_locale(country)
+        intro = reason or f"Hi, this is {business_name} calling about your recent service request."
+        parts = [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            "<Response>",
+            f'<Speak language="{locale.language}">{escape(intro, quote=False)}</Speak>',
+        ]
+        if escalation_phone:
+            parts.append(f'<Speak language="{locale.language}">Connecting you now.</Speak>')
+            parts.append(
+                f"<Dial><Number>{escape(escalation_phone.strip(), quote=False)}</Number></Dial>"
+            )
+        else:
+            parts.append(
+                f'<Speak language="{locale.language}">Please call us back at your convenience.</Speak>'
+            )
+        parts.append("<Hangup/></Response>")
+        return "".join(parts)
+
+
+class SignalWireVoiceMarkup(TwilioVoiceMarkup):
+    """cXML is TwiML-compatible — reuse Twilio gather/stream/transfer builders."""
+
+    @property
+    def provider_name(self) -> str:
+        return "signalwire"
+
+    def is_configured(self) -> bool:
+        from app.voice import signalwire_client
+
+        return signalwire_client.is_signalwire_configured()
+
+
+class VoipMsVoiceMarkup(VoiceMarkupBuilder):
+    """
+    VoIP.ms does not consume TeXML/TwiML for inbound AI gather.
+
+    Markup helpers return plain-text acknowledgements for SMS URL callbacks
+    and SIP-routing oriented messages for voice status endpoints.
+    """
+
+    content_type = "text/plain"
+
+    @property
+    def provider_name(self) -> str:
+        return "voipms"
+
+    def is_configured(self) -> bool:
+        from app.voice import voipms_client
+
+        return voipms_client.is_voipms_configured()
+
+    def supports_streaming(self) -> bool:
+        return False
+
+    def build_greeting(
+        self,
+        business: Business,
+        base_url: str,
+        call_log_id: str,
+        *,
+        call_sid: str | None = None,
+    ) -> str:
+        del business, base_url, call_log_id, call_sid
+        return "ok"
+
+    def build_say_and_gather(
+        self,
+        message: str,
+        base_url: str,
+        call_log_id: str,
+        *,
+        call_sid: str | None = None,
+        country: str | None = None,
+    ) -> str:
+        del message, base_url, call_log_id, call_sid, country
+        return "ok"
+
+    def build_hangup(self, message: str, *, country: str | None = None) -> str:
+        del message, country
+        return "ok"
+
+    def build_transfer(
+        self,
+        escalation_phone: str,
+        message: str | None = None,
+        *,
+        country: str | None = None,
+    ) -> str:
+        del escalation_phone, message, country
+        return "ok"
+
+    def build_empty(self) -> str:
+        return "ok"
+
+    def build_outbound_answer(
+        self,
+        business_name: str,
+        escalation_phone: str | None,
+        *,
+        reason: str | None = None,
+        country: str | None = None,
+    ) -> str:
+        del business_name, escalation_phone, reason, country
+        return "ok"
+
+
 _BUILDERS: dict[str, type[VoiceMarkupBuilder]] = {
     "telnyx": TelnyxVoiceMarkup,
     "twilio": TwilioVoiceMarkup,
     "vonage": VonageVoiceMarkup,
+    "plivo": PlivoVoiceMarkup,
+    "signalwire": SignalWireVoiceMarkup,
+    "voipms": VoipMsVoiceMarkup,
 }
 
 

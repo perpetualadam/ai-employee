@@ -28,10 +28,10 @@ class TelnyxTelephonyProvider(TelephonyProvider):
         return runtime_caps(telnyx_telephony(), self, service="telephony")
 
     async def answer_call(self, call_id: str, webhook_response: dict[str, Any]) -> ProviderResult:
-        texml = webhook_response.get("texml", "")
+        texml = webhook_response.get("markup") or webhook_response.get("texml") or ""
         if not texml:
-            raise ValueError("webhook_response must include texml")
-        telnyx_client.update_call_texml(call_id, texml)
+            raise ValueError("webhook_response must include markup (or texml)")
+        telnyx_client.update_call_texml(call_id, str(texml))
         return ProviderResult(provider=self.provider_name, external_id=call_id)
 
     async def outbound_call(

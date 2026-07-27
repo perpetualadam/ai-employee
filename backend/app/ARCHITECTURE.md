@@ -202,8 +202,8 @@ External systems are wired through **`integrations/registry.py`** (composition r
 | Outbound SMS | `services/messaging/provider.py` | `SMS_PROVIDER` | Telnyx |
 | Inbound SMS webhook | `integrations/contracts.py` → `SmsInboundAdapter` | follows `SMS_PROVIDER` | Telnyx |
 | Email | `integrations/contracts.py` → `EmailProvider` | `EMAIL_PROVIDER` | SMTP / dev log |
-| Voice call control | `integrations/contracts.py` → `VoiceCallControl` | `VOICE_PROVIDER` | Telnyx TeXML |
-| Voice webhooks | `integrations/contracts.py` → `VoiceWebhookAdapter` | follows `VOICE_PROVIDER` | Telnyx |
+| Voice call control | `integrations/contracts.py` → `VoiceCallControl` | `VOICE_PROVIDER` | Telnyx / Twilio / Vonage / Plivo / SignalWire / VoIP.ms |
+| Voice webhooks | `integrations/contracts.py` → `VoiceWebhookAdapter` | `VOICE_PROVIDER` + header detect | Same set (VoIP.ms SIP/SMS-callback oriented) |
 | Country defaults | `domain/telecom.py` | `Business.country` | AU, GB, EU, NZ, JP, CN, RU, US |
 
 **To swap a provider (e.g. Telnyx → Twilio):**

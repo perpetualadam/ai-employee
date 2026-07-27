@@ -82,20 +82,18 @@ class TwilioVonageInboundSpecification(unittest.TestCase):
 
     def test_twilio_telephony_answer_call_pushes_twiml(self) -> None:
         provider = TwilioTelephonyProvider()
-        with patch.object(provider, "_require_configured"):
-            with patch("app.voice.twilio_client.update_call_twiml") as update:
-                asyncio.run(
-                    provider.answer_call("CA999", {"texml": "<Response><Hangup/></Response>"})
-                )
-                update.assert_called_once_with("CA999", "<Response><Hangup/></Response>")
+        with patch("app.voice.twilio_client.update_call_twiml") as update:
+            asyncio.run(
+                provider.answer_call("CA999", {"texml": "<Response><Hangup/></Response>"})
+            )
+            update.assert_called_once_with("CA999", "<Response><Hangup/></Response>")
 
     def test_vonage_telephony_answer_call_pushes_ncco(self) -> None:
         provider = VonageTelephonyProvider()
         ncco = '[{"action":"talk","text":"Hello"},{"action":"hangup"}]'
-        with patch.object(provider, "_require_configured"):
-            with patch("app.voice.vonage_client.update_call_ncco") as update:
-                asyncio.run(provider.answer_call("uuid-9", {"texml": ncco}))
-                update.assert_called_once_with("uuid-9", ncco)
+        with patch("app.voice.vonage_client.update_call_ncco") as update:
+            asyncio.run(provider.answer_call("uuid-9", {"texml": ncco}))
+            update.assert_called_once_with("uuid-9", ncco)
 
     def test_streaming_available_when_twilio_markup_configured(self) -> None:
         from app.services.voice_mode_service import VoiceModeService

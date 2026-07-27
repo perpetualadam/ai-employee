@@ -18,7 +18,7 @@ from app.voice.media_stream_handler import handle_media_stream
 from app.voice.duplex.handler import handle_duplex_stream
 from app.voice.stt.gather_stt import GatherSpeechSTT
 from app.voice.voice_markup import get_voice_markup, resolve_voice_markup
-from app.integrations.registry import get_voice_webhook_adapter
+from app.integrations.registry import get_voice_webhook_adapter_for_request
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/voice", tags=["voice"])
@@ -44,13 +44,24 @@ def beep_tone() -> FileResponse:
     return FileResponse(_BEEP_WAV, media_type="audio/wav")
 
 
+@router.get("/plivo/xml")
+def plivo_pushed_xml(call_uuid: str = Query(...)) -> Response:
+    """Serve stashed PlivoXML for live call transfers (Plivo aleg_url)."""
+    from app.voice import plivo_client
+
+    xml = plivo_client.pop_call_xml(call_uuid) or plivo_client.peek_call_xml(call_uuid)
+    if not xml:
+        xml = '<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>'
+    return Response(content=xml, media_type="application/xml")
+
+
 @router.api_route("/inbound", methods=["GET", "POST"])
 async def inbound_call(
     request: Request,
     db: Session = Depends(get_db),
 ) -> Response:
     """CPaaS voice webhook when a call comes in."""
-    webhook = get_voice_webhook_adapter()
+    webhook = get_voice_webhook_adapter_for_request(request)
     markup_builder = get_voice_markup(webhook.provider_name)
     params = await webhook.parse_request(request)
 
@@ -107,7 +118,7 @@ async def gather_speech(
     db: Session = Depends(get_db),
 ) -> Response:
     """CPaaS webhook after speech is recognized."""
-    webhook = get_voice_webhook_adapter()
+    webhook = get_voice_webhook_adapter_for_request(request)
     markup_builder = get_voice_markup(webhook.provider_name)
     params = await webhook.parse_request(request)
 
@@ -136,7 +147,7 @@ async def call_status(
     db: Session = Depends(get_db),
 ) -> Response:
     """Call status callback — marks call complete and records duration."""
-    webhook = get_voice_webhook_adapter()
+    webhook = get_voice_webhook_adapter_for_request(request)
     markup_builder = get_voice_markup(webhook.provider_name)
     params = await webhook.parse_request(request)
 
@@ -166,7 +177,7 @@ async def outbound_answer(
     db: Session = Depends(get_db),
 ) -> Response:
     """Voice markup when a customer answers an outbound callback."""
-    webhook = get_voice_webhook_adapter()
+    webhook = get_voice_webhook_adapter_for_request(request)
     await webhook.parse_request(request)
 
     from app.models import Business, CallLog

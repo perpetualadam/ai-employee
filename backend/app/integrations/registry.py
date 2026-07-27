@@ -138,6 +138,19 @@ def get_voice_webhook_adapter(business: Business | None = None) -> VoiceWebhookA
     )
 
 
+def get_voice_webhook_adapter_for_request(
+    request,
+    business: Business | None = None,
+) -> VoiceWebhookAdapter:
+    """Prefer header-detected CPaaS so multi-primary inbound shares one route."""
+    from app.integrations.webhook_dispatch import detect_voice_webhook_provider
+
+    detected = detect_voice_webhook_provider(request)
+    if detected and detected in _VOICE_WEBHOOKS:
+        return _voice_webhook(detected)
+    return get_voice_webhook_adapter(business)
+
+
 def get_sms_inbound_adapter(business: Business | None = None) -> SmsInboundAdapter:
     primary = resolve_sms_cpaas_name(business=business)
     return select_adapter(
@@ -145,6 +158,18 @@ def get_sms_inbound_adapter(business: Business | None = None) -> SmsInboundAdapt
         ProviderService.TELEPHONY,
         primary,
     )
+
+
+def get_sms_inbound_adapter_for_request(
+    request,
+    business: Business | None = None,
+) -> SmsInboundAdapter:
+    from app.integrations.webhook_dispatch import detect_sms_webhook_provider
+
+    detected = detect_sms_webhook_provider(request)
+    if detected and detected in _SMS_INBOUND:
+        return _sms_inbound(detected)
+    return get_sms_inbound_adapter(business)
 
 
 def get_duplex_media_adapter(business: Business | None = None, db=None) -> DuplexMediaAdapter:
