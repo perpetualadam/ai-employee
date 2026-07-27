@@ -636,11 +636,25 @@ class PlivoVoiceMarkup(VoiceMarkupBuilder):
         return "".join(parts)
 
 
+class SignalWireVoiceMarkup(TwilioVoiceMarkup):
+    """cXML is TwiML-compatible — reuse Twilio gather/stream/transfer builders."""
+
+    @property
+    def provider_name(self) -> str:
+        return "signalwire"
+
+    def is_configured(self) -> bool:
+        from app.voice import signalwire_client
+
+        return signalwire_client.is_signalwire_configured()
+
+
 _BUILDERS: dict[str, type[VoiceMarkupBuilder]] = {
     "telnyx": TelnyxVoiceMarkup,
     "twilio": TwilioVoiceMarkup,
     "vonage": VonageVoiceMarkup,
     "plivo": PlivoVoiceMarkup,
+    "signalwire": SignalWireVoiceMarkup,
 }
 
 
