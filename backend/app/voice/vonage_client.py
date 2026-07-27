@@ -292,8 +292,12 @@ def configure_phone_number(
         data["voiceCallbackType"] = "app"
         data["voiceCallbackValue"] = settings.vonage_application_id
     elif voice_url:
-        data["voiceCallbackType"] = "sip"
-        data["voiceCallbackValue"] = voice_url
+        # Numbers API voiceCallbackType is app|sip|tel only. HTTP answer URLs belong on the
+        # Vonage Application (answer_url), not as a SIP target — skip invalid wiring.
+        logger.warning(
+            "Vonage voiceCallbackValue not set: HTTP voice_url requires vonage_application_id",
+            extra={"voice_url": voice_url},
+        )
     data["voiceStatusCallback"] = f"{settings.public_api_url.rstrip('/')}/api/v1/voice/status"
     return _rest_request("POST", "/number/update", data=data)
 

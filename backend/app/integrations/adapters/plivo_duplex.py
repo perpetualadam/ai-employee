@@ -96,8 +96,15 @@ class PlivoDuplexMediaAdapter(DuplexMediaAdapter):
     async def stop_playback(self, call_control_id: str | None = None) -> None:
         del call_control_id
 
-    async def deliver_audio(self, audio: bytes, *, content_type: str = "audio/l16") -> None:
-        del audio, content_type
+    async def deliver_audio(
+        self,
+        call_id: str,
+        audio: bytes,
+        *,
+        content_type: str = "audio/mulaw",
+    ) -> bool:
+        del call_id, audio, content_type
+        return False
 
     def build_hangup_response(self, message: str, *, country: str | None = None) -> str:
         from app.voice.voice_markup import PlivoVoiceMarkup

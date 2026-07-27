@@ -59,21 +59,32 @@ class PlivoVoiceWebhookAdapter(VoiceWebhookAdapter):
         if settings.plivo_auth_token and signature:
             # Strip query string for V2 base URI comparison when needed.
             uri = str(request.url).split("?", 1)[0]
-            if nonce and not validate_plivo_signature_v2(
+            v3_header = bool(request.headers.get("X-Plivo-Signature-V3"))
+            if not nonce:
+                # Signature present without nonce cannot be verified — reject forged requests.
+                if not settings.debug:
+                    logger.warning(
+                        "Plivo webhook signature missing nonce",
+                        extra={"path": request.url.path},
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Invalid webhook signature",
+                    )
+            elif not validate_plivo_signature_v2(
                 uri,
                 nonce,
                 signature,
                 settings.plivo_auth_token,
             ):
-                # V3 uses a different construction; accept in debug, reject in prod if V2 fails
-                # and V3 header was used without local V3 verifier.
-                if "V3" not in (request.headers.get("X-Plivo-Signature-V3") or ""):
-                    if not settings.debug:
-                        logger.warning("Invalid Plivo webhook signature", extra={"path": request.url.path})
-                        raise HTTPException(
-                            status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Invalid webhook signature",
-                        )
+                # V3 uses a different construction; accept when the V3 header is present
+                # (no local V3 verifier yet). Reject failed V2-only signatures in prod.
+                if not v3_header and not settings.debug:
+                    logger.warning("Invalid Plivo webhook signature", extra={"path": request.url.path})
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Invalid webhook signature",
+                    )
         elif not settings.debug and not settings.plivo_auth_token:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

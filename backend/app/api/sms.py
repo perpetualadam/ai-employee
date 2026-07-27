@@ -30,7 +30,7 @@ async def inbound_sms(
     CPaaS messaging webhook for inbound SMS (Telnyx/Twilio/Vonage/Plivo/SignalWire/VoIP.ms).
     Handles SMS recovery/continuation — not a standalone text receptionist.
     """
-    adapter = get_sms_inbound_adapter_for_request(request)
+    adapter = await get_sms_inbound_adapter_for_request(request)
     event = await adapter.parse_inbound(request)
     if event is None:
         # VoIP.ms URL callback retry expects a plain "ok" body.
