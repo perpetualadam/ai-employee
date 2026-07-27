@@ -35,8 +35,47 @@ class WebhookDispatchSpecification(unittest.TestCase):
     def test_unknown_headers_return_none(self) -> None:
         request = MagicMock()
         request.headers = {}
-        self.assertIsNone(detect_voice_webhook_provider(request))
-        self.assertIsNone(detect_sms_webhook_provider(request))
+        request.query_params = {}
+        with patch(
+            "app.integrations.webhook_dispatch.get_settings",
+            return_value=MagicMock(
+                voipms_api_username="",
+                voipms_api_password="",
+                signalwire_project_id="",
+                signalwire_api_token="",
+                twilio_account_sid="",
+                twilio_auth_token="",
+                voice_provider="auto",
+                vonage_signature_secret="",
+                vonage_api_secret="",
+            ),
+        ):
+            self.assertIsNone(detect_voice_webhook_provider(request))
+            self.assertIsNone(detect_sms_webhook_provider(request))
+
+    def test_detects_plivo_from_signature_header(self) -> None:
+        request = MagicMock()
+        request.headers = {"X-Plivo-Signature-V2": "sig"}
+        request.query_params = {}
+        self.assertEqual(detect_voice_webhook_provider(request), "plivo")
+
+    @patch("app.integrations.webhook_dispatch.get_settings")
+    def test_detects_voipms_from_sms_callback_query(self, settings_mock) -> None:
+        settings_mock.return_value = MagicMock(
+            voipms_api_username="user",
+            voipms_api_password="pass",
+            signalwire_project_id="",
+            signalwire_api_token="",
+            twilio_account_sid="",
+            twilio_auth_token="",
+            voice_provider="auto",
+            vonage_signature_secret="",
+            vonage_api_secret="",
+        )
+        request = MagicMock()
+        request.headers = {}
+        request.query_params = {"from": "5551111", "to": "5552222", "message": "hi"}
+        self.assertEqual(detect_sms_webhook_provider(request), "voipms")
 
 
 if __name__ == "__main__":

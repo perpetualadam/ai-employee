@@ -21,17 +21,21 @@ async def _process_inbound_sms(from_number: str, to_number: str, text: str) -> N
         db.close()
 
 
-@router.post("/inbound")
+@router.api_route("/inbound", methods=["GET", "POST"])
 async def inbound_sms(
     request: Request,
     background_tasks: BackgroundTasks,
 ) -> Response:
     """
-    Telnyx Messaging Profile webhook for message.received events.
+    CPaaS messaging webhook for inbound SMS (Telnyx/Twilio/Vonage/Plivo/SignalWire/VoIP.ms).
     Handles SMS recovery/continuation — not a standalone text receptionist.
     """
-    event = await get_sms_inbound_adapter_for_request(request).parse_inbound(request)
+    adapter = get_sms_inbound_adapter_for_request(request)
+    event = await adapter.parse_inbound(request)
     if event is None:
+        # VoIP.ms URL callback retry expects a plain "ok" body.
+        if adapter.provider_name == "voipms":
+            return Response(content="ok", media_type="text/plain", status_code=200)
         return Response(status_code=200)
 
     logger.info(
@@ -44,4 +48,6 @@ async def inbound_sms(
         event["to"],
         event["text"],
     )
+    if adapter.provider_name == "voipms":
+        return Response(content="ok", media_type="text/plain", status_code=200)
     return Response(status_code=200)

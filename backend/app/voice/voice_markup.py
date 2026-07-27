@@ -649,12 +649,87 @@ class SignalWireVoiceMarkup(TwilioVoiceMarkup):
         return signalwire_client.is_signalwire_configured()
 
 
+class VoipMsVoiceMarkup(VoiceMarkupBuilder):
+    """
+    VoIP.ms does not consume TeXML/TwiML for inbound AI gather.
+
+    Markup helpers return plain-text acknowledgements for SMS URL callbacks
+    and SIP-routing oriented messages for voice status endpoints.
+    """
+
+    content_type = "text/plain"
+
+    @property
+    def provider_name(self) -> str:
+        return "voipms"
+
+    def is_configured(self) -> bool:
+        from app.voice import voipms_client
+
+        return voipms_client.is_voipms_configured()
+
+    def supports_streaming(self) -> bool:
+        return False
+
+    def build_greeting(
+        self,
+        business: Business,
+        base_url: str,
+        call_log_id: str,
+        *,
+        call_sid: str | None = None,
+    ) -> str:
+        del business, base_url, call_log_id, call_sid
+        return "ok"
+
+    def build_say_and_gather(
+        self,
+        message: str,
+        base_url: str,
+        call_log_id: str,
+        *,
+        call_sid: str | None = None,
+        country: str | None = None,
+    ) -> str:
+        del message, base_url, call_log_id, call_sid, country
+        return "ok"
+
+    def build_hangup(self, message: str, *, country: str | None = None) -> str:
+        del message, country
+        return "ok"
+
+    def build_transfer(
+        self,
+        escalation_phone: str,
+        message: str | None = None,
+        *,
+        country: str | None = None,
+    ) -> str:
+        del escalation_phone, message, country
+        return "ok"
+
+    def build_empty(self) -> str:
+        return "ok"
+
+    def build_outbound_answer(
+        self,
+        business_name: str,
+        escalation_phone: str | None,
+        *,
+        reason: str | None = None,
+        country: str | None = None,
+    ) -> str:
+        del business_name, escalation_phone, reason, country
+        return "ok"
+
+
 _BUILDERS: dict[str, type[VoiceMarkupBuilder]] = {
     "telnyx": TelnyxVoiceMarkup,
     "twilio": TwilioVoiceMarkup,
     "vonage": VonageVoiceMarkup,
     "plivo": PlivoVoiceMarkup,
     "signalwire": SignalWireVoiceMarkup,
+    "voipms": VoipMsVoiceMarkup,
 }
 
 
