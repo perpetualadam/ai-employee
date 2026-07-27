@@ -31,9 +31,28 @@ class ProviderStubRegistrationSpecification(unittest.TestCase):
             self.assertIn("twilio", registered)
             self.assertIn("vonage", registered)
 
+    @patch("app.voice.twilio_client.is_twilio_configured", return_value=True)
+    @patch("app.integrations.provider_resolution.get_settings")
     @patch("app.config.get_settings")
-    def test_factory_resolves_twilio_from_business_override(self, settings_mock) -> None:
-        settings_mock.return_value = MagicMock(twilio_account_sid="AC-test", twilio_auth_token="secret")
+    def test_factory_resolves_twilio_from_business_override(
+        self,
+        settings_mock,
+        resolution_settings_mock,
+        _twilio_configured,
+    ) -> None:
+        settings = MagicMock(
+            twilio_account_sid="AC-test",
+            twilio_auth_token="secret",
+            voice_provider="auto",
+            telephony_provider="auto",
+            number_provisioning_provider="auto",
+            regulatory_provider="auto",
+            vonage_api_key="",
+            vonage_api_secret="",
+            telnyx_api_key="",
+        )
+        settings_mock.return_value = settings
+        resolution_settings_mock.return_value = settings
         config = ProviderConfiguration(
             {
                 "defaults": {"telephony": "telnyx", "numbers": "telnyx", "regulatory": "telnyx"},

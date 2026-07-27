@@ -14,8 +14,12 @@ class CallService:
     def __init__(self, telephony_provider: TelephonyProvider) -> None:
         self._telephony = telephony_provider
 
-    async def answer_call(self, call_id: str, *, texml: str) -> dict:
-        result = await self._telephony.answer_call(call_id, {"texml": texml})
+    async def answer_call(self, call_id: str, *, markup: str | None = None, texml: str | None = None) -> dict:
+        """Push provider-native markup (TwiML/TeXML/NCCO). ``texml`` kept as alias."""
+        body = markup if markup is not None else texml
+        if body is None:
+            raise ValueError("answer_call requires markup (or texml)")
+        result = await self._telephony.answer_call(call_id, {"markup": body, "texml": body})
         return {"call_id": result.external_id, "provider": result.provider}
 
     async def place_outbound_call(

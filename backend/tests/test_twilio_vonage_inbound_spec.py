@@ -82,12 +82,11 @@ class TwilioVonageInboundSpecification(unittest.TestCase):
 
     def test_twilio_telephony_answer_call_pushes_twiml(self) -> None:
         provider = TwilioTelephonyProvider()
-        with patch.object(provider, "_require_configured"):
-            with patch("app.voice.twilio_client.update_call_twiml") as update:
-                asyncio.run(
-                    provider.answer_call("CA999", {"texml": "<Response><Hangup/></Response>"})
-                )
-                update.assert_called_once_with("CA999", "<Response><Hangup/></Response>")
+        with patch("app.voice.twilio_client.update_call_twiml") as update:
+            asyncio.run(
+                provider.answer_call("CA999", {"texml": "<Response><Hangup/></Response>"})
+            )
+            update.assert_called_once_with("CA999", "<Response><Hangup/></Response>")
 
     def test_vonage_telephony_answer_call_pushes_ncco(self) -> None:
         provider = VonageTelephonyProvider()

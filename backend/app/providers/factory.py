@@ -45,6 +45,28 @@ class ProviderFactory:
             return None, {}
         return resolve_provider_context(business, db, resource_provider=resource_provider)
 
+    _KNOWN_CPAAS = frozenset({"telnyx", "twilio", "vonage", "bandwidth", "sinch", "messagebird"})
+
+    @classmethod
+    def _env_cpaas_override(cls) -> str | None:
+        """Honor VOICE_PROVIDER / TELEPHONY_PROVIDER so Twilio/Vonage can be primary."""
+        from app.integrations.provider_resolution import _env_override
+
+        for setting in ("voice_provider", "telephony_provider"):
+            value = _env_override(setting)
+            if value and value in cls._KNOWN_CPAAS:
+                return value
+        return None
+
+    @classmethod
+    def _env_service_override(cls, setting_name: str) -> str | None:
+        from app.integrations.provider_resolution import _env_override
+
+        value = _env_override(setting_name)
+        if value and value in cls._KNOWN_CPAAS:
+            return value
+        return None
+
     def get_telephony_provider(
         self,
         country: str | None = None,
@@ -58,7 +80,7 @@ class ProviderFactory:
             ProviderService.TELEPHONY,
             country=country or resolved_country,
             business_overrides=overrides,
-            resource_provider=resource_provider,
+            resource_provider=resource_provider or self._env_cpaas_override(),
         )
         return provider  # type: ignore[return-value]
 
@@ -78,6 +100,10 @@ class ProviderFactory:
             business_overrides=overrides,
             number_type=number_type,
             required_capabilities=required_capabilities,
+            resource_provider=(
+                self._env_service_override("number_provisioning_provider")
+                or self._env_cpaas_override()
+            ),
         )
         return provider  # type: ignore[return-value]
 
@@ -93,6 +119,10 @@ class ProviderFactory:
             ProviderService.REGULATORY,
             country=country or resolved_country,
             business_overrides=overrides,
+            resource_provider=(
+                self._env_service_override("regulatory_provider")
+                or self._env_cpaas_override()
+            ),
         )
         return provider  # type: ignore[return-value]
 

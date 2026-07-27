@@ -67,12 +67,17 @@ class Settings(BaseSettings):
     stripe_price_pro: str = ""
     frontend_url: str = "http://localhost:3000"
 
-    # Alternate CPaaS credentials (stub adapters — configure to enable)
+    # Alternate CPaaS credentials (Twilio / Vonage — configure to enable as primary)
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
+    twilio_phone_number: str = ""
+    twilio_messaging_service_sid: str = ""
     vonage_api_key: str = ""
     vonage_api_secret: str = ""
     vonage_signature_secret: str = ""
+    vonage_application_id: str = ""
+    vonage_private_key: str = ""
+    vonage_phone_number: str = ""
 
     # P4 — reminders, monitoring, internal jobs
     reminders_enabled: bool = True

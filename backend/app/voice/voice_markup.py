@@ -220,7 +220,7 @@ class TwilioVoiceMarkup(VoiceMarkupBuilder):
         from app.services.voice_mode_service import VoiceModeService
 
         if call_sid and VoiceModeService.effective_mode() == "duplex":
-            return build_say_and_duplex(message, base_url, call_log_id, call_sid, country=country)
+            return self._build_say_and_duplex(message, base_url, call_log_id, call_sid, country=country)
         if call_sid and VoiceModeService.effective_mode() == "stream":
             return self._build_say_and_stream(message, base_url, call_log_id, call_sid, country=country)
 
@@ -239,6 +239,60 @@ class TwilioVoiceMarkup(VoiceMarkupBuilder):
             f'speechTimeout="{settings.voice_gather_speech_timeout}" '
             f'language="{locale.language}"/>'
             f"{_say_xml('I did not catch that. Goodbye!', country)}"
+            "<Hangup/>"
+            "</Response>"
+        )
+
+    def _build_say_and_duplex(
+        self,
+        message: str,
+        base_url: str,
+        call_log_id: str,
+        call_sid: str,
+        *,
+        country: str | None,
+    ) -> str:
+        from app.voice.texml_builder import duplex_stream_url
+
+        stream_url = escape(duplex_stream_url(call_log_id, call_sid), quote=True)
+        beep_url = escape(_voice_urls(base_url, call_log_id)["beep"], quote=True)
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            "<Response>"
+            f"{_say_xml(message, country)}"
+            f'<Play loop="1">{beep_url}</Play>'
+            f'<Connect><Stream url="{stream_url}" /></Connect>'
+            '<Pause length="3600"/>'
+            f"{_say_xml('Sorry, I did not hear anything. Goodbye!', country)}"
+            "<Hangup/>"
+            "</Response>"
+        )
+
+    def build_outbound_answer(
+        self,
+        business_name: str,
+        escalation_phone: str | None,
+        *,
+        reason: str | None = None,
+        country: str | None = None,
+    ) -> str:
+        intro = reason or f"Hi, this is {business_name} calling about your recent service request."
+        if escalation_phone:
+            return (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                "<Response>"
+                f"{_say_xml(intro, country)}"
+                f"{_say_xml('Connecting you now.', country)}"
+                f'<Dial timeout="30"><Number>{escape(escalation_phone.strip(), quote=False)}</Number></Dial>'
+                f"{_say_xml('Sorry, we could not connect you. We will try again soon.', country)}"
+                "<Hangup/>"
+                "</Response>"
+            )
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            "<Response>"
+            f"{_say_xml(intro, country)}"
+            f"{_say_xml('Please call us back at your convenience. Thank you.', country)}"
             "<Hangup/>"
             "</Response>"
         )
