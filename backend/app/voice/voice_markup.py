@@ -14,7 +14,6 @@ from app.models import Business
 from app.voice import telnyx_client, twilio_client, vonage_client
 from app.voice.texml_builder import (
     build_outbound_answer_texml,
-    build_say_and_duplex,
     media_stream_url,
     public_ws_url,
 )
@@ -392,9 +391,25 @@ class VonageVoiceMarkup(VoiceMarkupBuilder):
         country: str | None = None,
     ) -> str:
         from app.services.voice_mode_service import VoiceModeService
+        from app.voice.texml_builder import duplex_stream_url
 
         if call_sid and VoiceModeService.effective_mode() == "duplex":
-            return build_say_and_duplex(message, base_url, call_log_id, call_sid, country=country)
+            stream_url = duplex_stream_url(call_log_id, call_sid)
+            return json.dumps(
+                [
+                    {"action": "talk", "text": message},
+                    {
+                        "action": "connect",
+                        "endpoint": [
+                            {
+                                "type": "websocket",
+                                "uri": stream_url,
+                                "content-type": "audio/l16;rate=16000",
+                            }
+                        ],
+                    },
+                ]
+            )
         if call_sid and VoiceModeService.effective_mode() == "stream":
             stream_url = media_stream_url(call_log_id, call_sid)
             return json.dumps(

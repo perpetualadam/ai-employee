@@ -1,10 +1,11 @@
-"""Vonage SMS outbound stub."""
+"""Vonage SMS outbound adapter — parity with TelnyxSmsProvider."""
 
 from __future__ import annotations
 
 from app.config import get_settings
 from app.providers.capability_presets import runtime_caps, vonage_telephony
 from app.services.messaging.provider import SmsProvider
+from app.voice import vonage_client
 
 
 class VonageSmsProvider(SmsProvider):
@@ -13,8 +14,7 @@ class VonageSmsProvider(SmsProvider):
         return "vonage"
 
     def is_configured(self) -> bool:
-        settings = get_settings()
-        return bool(settings.vonage_api_key and settings.vonage_api_secret)
+        return vonage_client.is_vonage_configured()
 
     def get_capabilities(self):
         return runtime_caps(vonage_telephony(), self, service="messaging")
@@ -27,10 +27,28 @@ class VonageSmsProvider(SmsProvider):
                 "phone": to_number,
                 "error": "Vonage is not configured",
             }
-        return {
-            "sent": True,
-            "provider": self.provider_name,
-            "phone": to_number,
-            "message": text,
-            "id": "sms-vonage-stub",
-        }
+        settings = get_settings()
+        sender = from_number or settings.vonage_phone_number
+        if not sender:
+            return {
+                "sent": False,
+                "provider": self.provider_name,
+                "phone": to_number,
+                "error": "Vonage sender number is not configured",
+            }
+        try:
+            result = vonage_client.send_sms(sender, to_number, text)
+            return {
+                "sent": True,
+                "provider": self.provider_name,
+                "phone": to_number,
+                "message": text,
+                "id": result.get("id"),
+            }
+        except Exception as exc:
+            return {
+                "sent": False,
+                "provider": self.provider_name,
+                "phone": to_number,
+                "error": str(exc),
+            }
