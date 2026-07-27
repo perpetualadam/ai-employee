@@ -336,6 +336,10 @@ def get_application(application_id: str) -> dict[str, Any]:
     return _api_request("GET", f"/v2/applications/{application_id}")
 
 
+def update_application(application_id: str, *, payload: dict[str, Any]) -> dict[str, Any]:
+    return _api_request("PUT", f"/v2/applications/{application_id}", json=payload)
+
+
 def upload_media(*, file_bytes: bytes, filename: str, content_type: str) -> dict[str, Any]:
     with httpx.Client(timeout=120.0) as client:
         response = client.post(
@@ -346,7 +350,64 @@ def upload_media(*, file_bytes: bytes, filename: str, content_type: str) -> dict
         response.raise_for_status()
         if response.content:
             return response.json()
-        return {"id": response.headers.get("Location", filename)}
+        location = response.headers.get("Location") or ""
+        media_id = location.rstrip("/").split("/")[-1] if location else filename
+        return {"id": media_id, "url": f"{VONAGE_API_BASE}/v3/media/{media_id}"}
+
+
+def get_media_info(media_id: str) -> dict[str, Any]:
+    return _api_request("GET", f"/v3/media/{media_id}/info")
+
+
+def update_media_info(
+    media_id: str,
+    *,
+    public: bool | None = None,
+    metadata_primary: str | None = None,
+    metadata_secondary: str | None = None,
+    title: str | None = None,
+    description: str | None = None,
+) -> dict[str, Any]:
+    """Update media metadata — used to attach docs to a regulatory bundle."""
+    data: dict[str, Any] = {}
+    if public is not None:
+        data["public"] = str(public).lower()
+    if metadata_primary is not None:
+        data["metadata_primary"] = metadata_primary
+    if metadata_secondary is not None:
+        data["metadata_secondary"] = metadata_secondary
+    if title is not None:
+        data["title"] = title
+    if description is not None:
+        data["description"] = description
+    url = f"{VONAGE_API_BASE}/v3/media/{media_id}/info"
+    with httpx.Client(timeout=60.0) as client:
+        response = client.request("PUT", url, auth=_auth(), data=data)
+        response.raise_for_status()
+        if response.content:
+            return response.json()
+    return get_media_info(media_id)
+
+
+def list_media(*, page_size: int = 100, page_index: int = 0) -> dict[str, Any]:
+    return _api_request(
+        "GET",
+        "/v3/media/",
+        params={"page_size": page_size, "page_index": page_index, "order": "descending"},
+    )
+
+
+def create_tfn_registration(payload: dict[str, Any]) -> dict[str, Any]:
+    """Create a US/CA Toll-Free Number registration (DRAFT or SUBMITTED)."""
+    return _api_request("POST", "/tfn/v1/registrations", json=payload)
+
+
+def get_tfn_registration(registration_id: str) -> dict[str, Any]:
+    return _api_request("GET", f"/tfn/v1/registrations/{registration_id}")
+
+
+def update_tfn_registration(registration_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return _api_request("PATCH", f"/tfn/v1/registrations/{registration_id}", json=payload)
 
 
 def _country_from_e164(phone_number: str) -> str:

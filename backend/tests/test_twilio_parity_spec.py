@@ -146,22 +146,54 @@ class TwilioParitySpecification(unittest.TestCase):
             ) as create_eu:
                 result = provider.create_end_user(
                     business_id="biz-1",
-                    payload={"friendly_name": "Acme", "business_name": "Acme LLC"},
+                    payload={
+                        "friendly_name": "Acme",
+                        "business_name": "Acme LLC",
+                        "contact_email": "ops@acme.test",
+                    },
                 )
             self.assertEqual(result.external_id, "IT123")
             create_eu.assert_called_once()
+            self.assertEqual(create_eu.call_args.kwargs["attributes"]["contact_email"], "ops@acme.test")
 
             with patch(
-                "app.voice.twilio_client.create_regulatory_bundle",
-                return_value={"sid": "BU123"},
+                "app.voice.twilio_client.upload_supporting_document",
+                return_value={"sid": "RD123", "mime_type": "application/pdf"},
+            ) as upload:
+                doc = provider.upload_document(
+                    file_bytes=b"%PDF-1.4",
+                    filename="registration.pdf",
+                    content_type="application/pdf",
+                )
+            self.assertEqual(doc.external_id, "RD123")
+            upload.assert_called_once()
+            self.assertEqual(upload.call_args.kwargs["file_bytes"], b"%PDF-1.4")
+            self.assertEqual(upload.call_args.kwargs["content_type"], "application/pdf")
+
+            with patch(
+                "app.voice.twilio_client.get_end_user",
+                return_value={"sid": "IT123", "attributes": {"contact_email": "ops@acme.test"}},
             ):
-                with patch("app.voice.twilio_client.assign_bundle_item") as assign:
-                    bundle = provider.create_regulatory_bundle(
-                        country_code="US",
-                        end_user_id="IT123",
-                    )
+                with patch(
+                    "app.voice.twilio_client.create_regulatory_bundle",
+                    return_value={"sid": "BU123"},
+                ) as create_bundle:
+                    with patch("app.voice.twilio_client.assign_bundle_item") as assign:
+                        bundle = provider.create_regulatory_bundle(
+                            country_code="US",
+                            end_user_id="IT123",
+                        )
             self.assertEqual(bundle.external_id, "BU123")
             assign.assert_called_once()
+            self.assertEqual(create_bundle.call_args.kwargs["email"], "ops@acme.test")
+
+            with patch(
+                "app.voice.twilio_client.assign_bundle_item",
+                return_value={"sid": "BV123"},
+            ) as attach:
+                attached = provider.attach_document(bundle_id="BU123", document_id="RD123")
+            self.assertEqual(attached.external_id, "BU123")
+            attach.assert_called_once_with(bundle_sid="BU123", object_sid="RD123")
 
             with patch(
                 "app.voice.twilio_client.submit_regulatory_bundle",
@@ -170,6 +202,33 @@ class TwilioParitySpecification(unittest.TestCase):
                 submitted = provider.submit_bundle("BU123")
             self.assertEqual(submitted.external_id, "BU123")
             submit.assert_called_once_with("BU123")
+
+    def test_upload_supporting_document_uses_numbers_upload_host_for_files(self) -> None:
+        from app.voice import twilio_client
+
+        mock_response = MagicMock()
+        mock_response.content = b'{"sid":"RD999"}'
+        mock_response.json.return_value = {"sid": "RD999"}
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("app.voice.twilio_client.is_twilio_configured", return_value=True):
+            with patch("app.voice.twilio_client._auth", return_value=("AC123", "token")):
+                with patch("app.voice.twilio_client.httpx.Client") as client_cls:
+                    client = MagicMock()
+                    client.__enter__.return_value = client
+                    client.post.return_value = mock_response
+                    client_cls.return_value = client
+                    result = twilio_client.upload_supporting_document(
+                        friendly_name="reg.pdf",
+                        document_type="business_registration",
+                        attributes={"business_name": "Acme"},
+                        file_bytes=b"%PDF",
+                        content_type="application/pdf",
+                    )
+        self.assertEqual(result["sid"], "RD999")
+        posted_url = client.post.call_args.args[0]
+        self.assertTrue(posted_url.startswith("https://numbers-upload.twilio.com/v2/"))
+        self.assertIn("files", client.post.call_args.kwargs)
 
     def test_twilio_outbound_answer_is_twiml_not_telnyx_default(self) -> None:
         markup = TwilioVoiceMarkup()

@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 TWILIO_API_BASE = "https://api.twilio.com/2010-04-01"
 TWILIO_NUMBERS_BASE = "https://numbers.twilio.com/v2"
+TWILIO_NUMBERS_UPLOAD_BASE = "https://numbers-upload.twilio.com/v2"
 
 
 def is_twilio_configured() -> bool:
@@ -301,13 +302,37 @@ def upload_supporting_document(
     friendly_name: str,
     document_type: str,
     attributes: dict[str, Any] | None = None,
+    file_bytes: bytes | None = None,
+    content_type: str | None = None,
 ) -> dict[str, Any]:
+    """
+    Create a Supporting Document.
+
+    When ``file_bytes`` is provided, upload proof via the Numbers Upload host
+    (multipart), matching Twilio's regulatory file-upload flow. Otherwise create
+    metadata-only on ``numbers.twilio.com``.
+    """
+    attr_json = json.dumps(attributes or {})
+    if file_bytes is not None:
+        files = {
+            "File": (friendly_name, file_bytes, content_type or "application/octet-stream"),
+        }
+        data = {
+            "FriendlyName": friendly_name,
+            "Type": document_type,
+            "Attributes": attr_json,
+        }
+        url = f"{TWILIO_NUMBERS_UPLOAD_BASE}/RegulatoryCompliance/SupportingDocuments"
+        with httpx.Client(timeout=120.0) as client:
+            response = client.post(url, auth=_auth(), data=data, files=files)
+            response.raise_for_status()
+            return response.json() if response.content else {}
+
     data: dict[str, str] = {
         "FriendlyName": friendly_name,
         "Type": document_type,
+        "Attributes": attr_json,
     }
-    if attributes:
-        data["Attributes"] = json.dumps(attributes)
     return _numbers_request("POST", "/RegulatoryCompliance/SupportingDocuments", data=data)
 
 
