@@ -27,11 +27,40 @@ def _parse_bundle_id(bundle_id: str) -> tuple[str, str | None]:
     return bundle_id, None
 
 
+_MEDIA_PAGE_SIZE = 100
+# Hard stop so a broken count/cursor cannot loop forever.
+_MEDIA_PAGE_INDEX_CAP = 1000
+
+
 def _media_items_for_bundle(bundle_id: str) -> list[dict[str, Any]]:
-    page = vonage_client.list_media(page_size=100, page_index=0)
-    embedded = page.get("_embedded") or {}
-    items = embedded.get("media") or page.get("media") or []
-    return [item for item in items if (item.get("metadata_primary") or "") == bundle_id]
+    """Return all account media tagged with ``metadata_primary == bundle_id``.
+
+    Vonage Media list is paginated (max 100/page). Attached documents can sit
+    on later pages, so submit/status must walk every page — not only index 0.
+    """
+    matched: list[dict[str, Any]] = []
+    page_index = 0
+    while page_index <= _MEDIA_PAGE_INDEX_CAP:
+        page = vonage_client.list_media(page_size=_MEDIA_PAGE_SIZE, page_index=page_index)
+        embedded = page.get("_embedded") or {}
+        items = embedded.get("media") or page.get("media") or []
+        matched.extend(
+            item for item in items if (item.get("metadata_primary") or "") == bundle_id
+        )
+        if not items:
+            break
+        total = page.get("count")
+        if isinstance(total, int) and (page_index + 1) * _MEDIA_PAGE_SIZE >= total:
+            break
+        if len(items) < _MEDIA_PAGE_SIZE:
+            break
+        page_index += 1
+    else:
+        logger.warning(
+            "Vonage media pagination hit safety cap; later pages may be omitted",
+            extra={"bundle_id": bundle_id, "page_index_cap": _MEDIA_PAGE_INDEX_CAP},
+        )
+    return matched
 
 
 def _normalize_status(raw: str | None) -> str:

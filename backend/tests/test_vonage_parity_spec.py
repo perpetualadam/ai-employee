@@ -12,7 +12,10 @@ from app.providers.configuration import ProviderConfiguration
 from app.providers.factory import ProviderFactory
 from app.providers.registry import ProviderRegistry
 from app.providers.vonage.number_provisioning import VonageNumberProvisioningProvider
-from app.providers.vonage.regulatory import VonageRegulatoryProvider
+from app.providers.vonage.regulatory import (
+    VonageRegulatoryProvider,
+    _media_items_for_bundle,
+)
 from app.providers.vonage.telephony import VonageTelephonyProvider
 from app.services.messaging.vonage_sms import VonageSmsProvider
 from app.voice.voice_markup import VonageVoiceMarkup
@@ -270,6 +273,61 @@ class VonageParitySpecification(unittest.TestCase):
                         submitted = provider.submit_bundle("tfn-1")
             self.assertEqual(submitted.data.get("status"), "pending-review")
             submit_tfn.assert_called_once_with("tfn-1", {"status": "SUBMITTED"})
+
+    def test_media_items_for_bundle_paginates_beyond_first_page(self) -> None:
+        """Attached docs on page_index > 0 must still be found for submit/status."""
+        bundle_id = "app-1:GB"
+        page0 = {
+            "page_size": 100,
+            "page_index": 0,
+            "count": 101,
+            "_embedded": {
+                "media": [
+                    {"id": f"other-{i}", "metadata_primary": "other"}
+                    for i in range(100)
+                ]
+            },
+        }
+        page1 = {
+            "page_size": 100,
+            "page_index": 1,
+            "count": 101,
+            "_embedded": {
+                "media": [
+                    {"id": "media-late", "metadata_primary": bundle_id},
+                ]
+            },
+        }
+
+        with patch(
+            "app.voice.vonage_client.list_media",
+            side_effect=[page0, page1],
+        ) as list_media:
+            items = _media_items_for_bundle(bundle_id)
+
+        self.assertEqual([item["id"] for item in items], ["media-late"])
+        self.assertEqual(list_media.call_count, 2)
+        self.assertEqual(list_media.call_args_list[0].kwargs["page_index"], 0)
+        self.assertEqual(list_media.call_args_list[1].kwargs["page_index"], 1)
+
+        provider = VonageRegulatoryProvider()
+        with patch("app.voice.vonage_client.is_vonage_configured", return_value=True):
+            with patch(
+                "app.voice.vonage_client.get_tfn_registration",
+                side_effect=RuntimeError("not a tfn"),
+            ):
+                with patch(
+                    "app.voice.vonage_client.get_application",
+                    return_value={"id": "app-1", "name": "[pending-review] Acme"},
+                ):
+                    with patch(
+                        "app.voice.vonage_client.list_media",
+                        side_effect=[page0, page1],
+                    ):
+                        status = provider.get_bundle_status(bundle_id)
+        self.assertEqual(status.data.get("status"), "pending-review")
+        self.assertEqual(len(status.data.get("documents") or []), 1)
+        self.assertEqual(status.data["documents"][0]["id"], "media-late")
 
     def test_vonage_outbound_answer_is_ncco(self) -> None:
         markup = VonageVoiceMarkup()
