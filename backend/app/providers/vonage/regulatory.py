@@ -196,8 +196,10 @@ class VonageRegulatoryProvider(RegulatoryProvider):
                     extra={"bundle_id": bundle_id, "error": str(exc)},
                 )
 
-        # Application-backed bundle: verify end user + stamp media metadata (real API).
-        if end_user_id:
+        # Application-backed bundles use "{application_id}:{country}". TFN ids have
+        # no colon — after TFN attach failure, skip application lookup and complete
+        # the media-metadata fallback only.
+        if ":" in bundle_id and end_user_id:
             vonage_client.get_application(end_user_id)
         media = vonage_client.get_media_info(document_id)
         record = vonage_client.update_media_info(
@@ -262,8 +264,11 @@ class VonageRegulatoryProvider(RegulatoryProvider):
                 )
             )
 
+        # Only application-backed bundles (id contains ":") should probe/rename
+        # Applications. Colon-less TFN ids that fell through must not call
+        # get_application with the TFN registration id.
         application: dict[str, Any] = {}
-        if end_user_id:
+        if ":" in bundle_id and end_user_id:
             application = vonage_client.get_application(end_user_id)
             name = str(application.get("name") or end_user_id)
             if not name.startswith("[pending-review]"):
