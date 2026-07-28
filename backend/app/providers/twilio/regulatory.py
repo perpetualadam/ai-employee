@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from app.providers.base import ProviderResult
@@ -15,6 +16,8 @@ from app.voice import twilio_client
 
 logger = logging.getLogger(__name__)
 
+# Match filename keywords on alphanumeric boundaries only. A plain substring
+# check for "id" falsely classifies names like grid.pdf / valid.pdf.
 _DOCUMENT_TYPE_BY_FILENAME = {
     "address": "proof_of_address",
     "proof_of_address": "proof_of_address",
@@ -26,7 +29,7 @@ _DOCUMENT_TYPE_BY_FILENAME = {
 def _infer_document_type(filename: str) -> str:
     lowered = filename.lower()
     for needle, doc_type in _DOCUMENT_TYPE_BY_FILENAME.items():
-        if needle in lowered:
+        if re.search(rf"(?<![a-z0-9]){re.escape(needle)}(?![a-z0-9])", lowered):
             return doc_type
     return "business_registration"
 
