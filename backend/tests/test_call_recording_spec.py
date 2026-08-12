@@ -158,6 +158,33 @@ class RecordingAdapterSpecification(unittest.TestCase):
         self.assertEqual(plivo.recording_url, "https://media.plivo.com/r.mp3")
         self.assertEqual(plivo.duration_seconds, 33)
 
+    def test_telnyx_download_uses_bearer_api_key(self) -> None:
+        adapter = TexmlTwimlCallRecordingAdapter("telnyx")
+        url = "https://api.telnyx.com/v2/recordings/rec_123/download"
+        response = MagicMock()
+        response.content = b"ID3telnyx"
+        response.headers = {"content-type": "audio/mpeg"}
+        response.raise_for_status = MagicMock()
+        client = MagicMock()
+        client.get.return_value = response
+        client.__enter__.return_value = client
+        client.__exit__.return_value = None
+
+        with (
+            patch("app.integrations.adapters.call_recording.httpx.Client", return_value=client),
+            patch("app.config.get_settings") as settings_mock,
+        ):
+            settings_mock.return_value = MagicMock(telnyx_api_key="KEY_TELNYX")
+            audio, content_type = adapter.download_recording(url)
+
+        self.assertEqual(audio, b"ID3telnyx")
+        self.assertEqual(content_type, "audio/mpeg")
+        client.get.assert_called_once_with(
+            url,
+            auth=None,
+            headers={"Authorization": "Bearer KEY_TELNYX"},
+        )
+
 
 class CallRecordingServiceSpecification(unittest.TestCase):
     def test_stores_provider_recording_on_completed_callback(self) -> None:
