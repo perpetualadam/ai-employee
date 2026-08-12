@@ -9,6 +9,7 @@ from app.ai.receptionist_agent import ReceptionistAgent, get_ai_provider
 from app.config import get_settings
 from app.domain.intake import is_valid_service_address
 from app.domain.phone import normalize_phone
+from app.domain.recording import is_retention_enabled
 from app.models import Business, CallLog
 from app.models.enums import CallStatus
 from app.services.address_confirmation_service import AddressConfirmationService
@@ -53,7 +54,7 @@ class SmsService:
             if caller
             else None
         )
-        if text:
+        if text and is_retention_enabled(getattr(business, "recording_enabled", False)):
             SmsService._audit_inbound(
                 db,
                 business=business,
