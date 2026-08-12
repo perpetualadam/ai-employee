@@ -126,5 +126,50 @@ class CallRecordingService:
         return bool(call.recording_storage_key) and call.recording_status == "stored"
 
     @staticmethod
+    def delete_stored_recordings_for_businesses(
+        db: Session,
+        business_ids: list[str],
+        storage: StorageProvider | None = None,
+    ) -> int:
+        """
+        Delete recording bytes from object storage for the given businesses.
+
+        Must run before CallLog rows are cascaded away, or storage keys are lost
+        and audio remains orphaned under recordings/{business_id}/...
+        """
+        if not business_ids:
+            return 0
+
+        keys = [
+            key
+            for (key,) in db.query(CallLog.recording_storage_key)
+            .filter(
+                CallLog.business_id.in_(business_ids),
+                CallLog.recording_storage_key.isnot(None),
+            )
+            .all()
+            if key
+        ]
+        if not keys:
+            return 0
+
+        storage = storage or get_storage_provider()
+        deleted = 0
+        for key in keys:
+            try:
+                storage.delete(key)
+                deleted += 1
+            except Exception:
+                logger.exception(
+                    "Failed to delete call recording from storage",
+                    extra={"storage_key": key},
+                )
+        logger.info(
+            "Deleted call recordings from storage",
+            extra={"business_count": len(business_ids), "deleted": deleted, "attempted": len(keys)},
+        )
+        return deleted
+
+    @staticmethod
     def playback_expires_at() -> datetime:
         return datetime.now(UTC) + _PLAYBACK_TTL

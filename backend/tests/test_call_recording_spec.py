@@ -237,6 +237,26 @@ class CallRecordingServiceSpecification(unittest.TestCase):
         adapter.download_recording.assert_called_once_with("https://provider.example/rec.mp3")
         db.commit.assert_called()
 
+    def test_delete_stored_recordings_for_businesses_removes_bytes(self) -> None:
+        from app.providers.mocks.storage import MockStorageProvider
+
+        biz_id = str(uuid4())
+        key = f"recordings/{biz_id}/{uuid4()}/audio.mp3"
+        storage = MockStorageProvider()
+        storage.upload(key=key, data=b"audio-bytes", content_type="audio/mpeg")
+
+        db = MagicMock()
+        db.query.return_value.filter.return_value.all.return_value = [(key,)]
+
+        deleted = CallRecordingService.delete_stored_recordings_for_businesses(
+            db,
+            [biz_id],
+            storage=storage,
+        )
+
+        self.assertEqual(deleted, 1)
+        self.assertNotIn(key, storage._store)
+
 
 class ConversationRecordingSurfaceSpecification(unittest.TestCase):
     def test_detail_includes_recording_and_sms_audit(self) -> None:
