@@ -60,7 +60,29 @@ class ComplianceServiceSpecification(unittest.TestCase):
     def test_delete_account_removes_user(self) -> None:
         db = MagicMock()
         user = MagicMock()
+        user.businesses = []
         ComplianceService.delete_account(db, user)
+        db.delete.assert_called_once_with(user)
+        db.commit.assert_called_once()
+
+    def test_delete_account_removes_stored_recordings(self) -> None:
+        db = MagicMock()
+        user = MagicMock()
+        business = MagicMock()
+        business.id = "biz-1"
+        user.businesses = [business]
+        db.query.return_value.filter.return_value.all.return_value = [
+            ("recordings/biz-1/call-1/audio.mp3",),
+            ("recordings/biz-1/call-2/audio.mp3",),
+        ]
+        storage = MagicMock()
+        with patch(
+            "app.services.compliance_service.get_storage_provider",
+            return_value=storage,
+        ):
+            ComplianceService.delete_account(db, user)
+        storage.delete.assert_any_call("recordings/biz-1/call-1/audio.mp3")
+        storage.delete.assert_any_call("recordings/biz-1/call-2/audio.mp3")
         db.delete.assert_called_once_with(user)
         db.commit.assert_called_once()
 

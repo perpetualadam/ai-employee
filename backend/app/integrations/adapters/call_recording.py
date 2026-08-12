@@ -109,6 +109,7 @@ class TexmlTwimlCallRecordingAdapter(CallRecordingAdapter):
 
         settings = get_settings()
         auth: tuple[str, str] | None = None
+        headers: dict[str, str] = {}
         if self._provider_name == "twilio" and settings.twilio_account_sid and settings.twilio_auth_token:
             auth = (settings.twilio_account_sid, settings.twilio_auth_token)
         elif (
@@ -117,9 +118,11 @@ class TexmlTwimlCallRecordingAdapter(CallRecordingAdapter):
             and settings.signalwire_api_token
         ):
             auth = (settings.signalwire_project_id, settings.signalwire_api_token)
+        elif self._provider_name == "telnyx" and settings.telnyx_api_key:
+            headers["Authorization"] = f"Bearer {settings.telnyx_api_key}"
 
         with httpx.Client(timeout=60.0, follow_redirects=True) as client:
-            response = client.get(url, auth=auth)
+            response = client.get(url, auth=auth, headers=headers)
             response.raise_for_status()
             content_type = response.headers.get("content-type", "audio/mpeg").split(";")[0].strip()
             if not content_type.startswith("audio/"):

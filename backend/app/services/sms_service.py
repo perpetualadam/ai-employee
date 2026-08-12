@@ -53,7 +53,7 @@ class SmsService:
             if caller
             else None
         )
-        if text:
+        if text and getattr(business, "recording_enabled", True):
             SmsService._audit_inbound(
                 db,
                 business=business,

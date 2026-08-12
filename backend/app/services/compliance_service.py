@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
@@ -15,6 +16,9 @@ from app.models import (
     SmsLog,
     User,
 )
+from app.providers.factory import get_storage_provider
+
+logger = logging.getLogger(__name__)
 
 
 class ComplianceService:
@@ -135,5 +139,30 @@ class ComplianceService:
 
     @staticmethod
     def delete_account(db: Session, user: User) -> None:
+        business_ids = [b.id for b in (user.businesses or [])]
+        if business_ids:
+            keys = [
+                row[0]
+                for row in (
+                    db.query(CallLog.recording_storage_key)
+                    .filter(
+                        CallLog.business_id.in_(business_ids),
+                        CallLog.recording_storage_key.isnot(None),
+                    )
+                    .all()
+                )
+                if row[0]
+            ]
+            if keys:
+                storage = get_storage_provider()
+                for key in keys:
+                    try:
+                        storage.delete(key)
+                    except Exception:
+                        logger.exception(
+                            "Failed to delete call recording on account delete",
+                            extra={"storage_key": key},
+                        )
+
         db.delete(user)
         db.commit()

@@ -291,6 +291,7 @@ class InboundSmsAuditSpecification(unittest.TestCase):
         business.name = "Acme Plumbing"
         business.country = "US"
         business.phone_number = "+15557654321"
+        business.recording_enabled = True
 
         with (
             patch("app.services.sms_service.find_business_by_phone", return_value=business),
