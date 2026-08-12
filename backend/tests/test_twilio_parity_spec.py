@@ -11,7 +11,7 @@ from app.providers.configuration import ProviderConfiguration
 from app.providers.factory import ProviderFactory
 from app.providers.registry import ProviderRegistry
 from app.providers.twilio.number_provisioning import TwilioNumberProvisioningProvider
-from app.providers.twilio.regulatory import TwilioRegulatoryProvider
+from app.providers.twilio.regulatory import TwilioRegulatoryProvider, _infer_document_type
 from app.providers.twilio.telephony import TwilioTelephonyProvider
 from app.services.call_service import CallService
 from app.services.messaging.twilio_sms import TwilioSmsProvider
@@ -136,6 +136,18 @@ class TwilioParitySpecification(unittest.TestCase):
                         provider.configure_voice("PN123")
                         provider.configure_sms("PN123")
                 self.assertEqual(configure.call_count, 2)
+
+    def test_infer_document_type_uses_keyword_boundaries(self) -> None:
+        self.assertEqual(_infer_document_type("id.pdf"), "government_issued_id")
+        self.assertEqual(_infer_document_type("my_id.pdf"), "government_issued_id")
+        self.assertEqual(_infer_document_type("passport.pdf"), "government_issued_id")
+        self.assertEqual(_infer_document_type("proof_of_address.pdf"), "proof_of_address")
+        self.assertEqual(_infer_document_type("home-address.pdf"), "proof_of_address")
+        self.assertEqual(_infer_document_type("registration.pdf"), "business_registration")
+        # Substring traps: "id" appears inside these names but is not a keyword token.
+        self.assertEqual(_infer_document_type("grid.pdf"), "business_registration")
+        self.assertEqual(_infer_document_type("valid.pdf"), "business_registration")
+        self.assertEqual(_infer_document_type("identity.pdf"), "business_registration")
 
     def test_regulatory_methods_call_twilio_compliance_api(self) -> None:
         provider = TwilioRegulatoryProvider()
