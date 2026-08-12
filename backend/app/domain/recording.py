@@ -13,10 +13,15 @@ CALL_RECORDING_PROVIDERS = frozenset(
 XML_RECORDING_PROVIDERS = frozenset({"telnyx", "twilio", "signalwire"})
 
 
+def is_retention_enabled(recording_enabled: bool | None) -> bool:
+    """True when call recordings and SMS audit logs should be retained for review."""
+    return bool(recording_enabled)
+
+
 def greeting_with_recording_notice(greeting: str, *, recording_enabled: bool) -> str:
     """Prepend a short recording notice when retention recording is on."""
     text = (greeting or "").strip()
-    if not recording_enabled or not text:
+    if not is_retention_enabled(recording_enabled) or not text:
         return greeting
     if RECORDING_DISCLOSURE.lower() in text.lower():
         return text

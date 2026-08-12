@@ -11,6 +11,7 @@ from uuid import uuid4
 from app.domain.recording import (
     RECORDING_DISCLOSURE,
     greeting_with_recording_notice,
+    is_retention_enabled,
     supports_call_recording,
 )
 from app.integrations.adapters.call_recording import (
@@ -41,6 +42,11 @@ class RecordingDomainSpecification(unittest.TestCase):
             recording_enabled=False,
         )
         self.assertEqual(text, "Thank you for calling Acme.")
+
+    def test_retention_flag_gates_call_and_sms_audit(self) -> None:
+        self.assertTrue(is_retention_enabled(True))
+        self.assertFalse(is_retention_enabled(False))
+        self.assertFalse(is_retention_enabled(None))
 
     def test_supported_providers_include_major_cpaas(self) -> None:
         for name in ("telnyx", "twilio", "signalwire", "vonage", "plivo"):
@@ -318,6 +324,7 @@ class InboundSmsAuditSpecification(unittest.TestCase):
         business.name = "Acme Plumbing"
         business.country = "US"
         business.phone_number = "+15557654321"
+        business.recording_enabled = True
 
         with (
             patch("app.services.sms_service.find_business_by_phone", return_value=business),
@@ -349,6 +356,46 @@ class InboundSmsAuditSpecification(unittest.TestCase):
         self.assertEqual(kwargs["provider"], "plivo")
         self.assertEqual(kwargs["body"], "Hello")
         self.assertEqual(kwargs["business_id"], business.id)
+
+    def test_handle_inbound_skips_sms_log_when_recording_disabled(self) -> None:
+        import asyncio
+
+        from app.services.sms_service import SmsService
+
+        db = MagicMock()
+        business = MagicMock()
+        business.id = str(uuid4())
+        business.name = "Acme Plumbing"
+        business.country = "US"
+        business.phone_number = "+15557654321"
+        business.recording_enabled = False
+
+        with (
+            patch("app.services.sms_service.find_business_by_phone", return_value=business),
+            patch("app.plugins.publishers.publish_sms_received"),
+            patch("app.services.sms_service.SubscriptionService.get_access_denial_reason", return_value=None),
+            patch.object(SmsService, "_find_active_session", return_value=None),
+            patch.object(SmsService, "_try_confirm_address_via_text", return_value=False),
+            patch("app.services.sms_service.NotificationService") as notify_cls,
+            patch("app.services.sms_log_service.SmsLogService") as log_cls,
+            patch.object(SmsService, "_audit_inbound") as audit_inbound,
+        ):
+            notify_cls.return_value.send_sms.return_value = {"sent": True}
+
+            asyncio.run(
+                SmsService.handle_inbound(
+                    db,
+                    "+15551234567",
+                    "+15557654321",
+                    "Hello",
+                    provider="plivo",
+                    external_id="msg-1",
+                    raw_payload={"from": "+15551234567", "text": "Hello"},
+                )
+            )
+
+        audit_inbound.assert_not_called()
+        log_cls.assert_not_called()
 
 
 if __name__ == "__main__":
