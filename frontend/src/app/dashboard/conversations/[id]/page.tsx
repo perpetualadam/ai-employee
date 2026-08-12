@@ -28,6 +28,8 @@ export default function ConversationDetailPage() {
   const [loading, setLoading] = useState(true);
   const [calling, setCalling] = useState(false);
   const [callMessage, setCallMessage] = useState("");
+  const [recordingUrl, setRecordingUrl] = useState<string | null>(null);
+  const [recordingError, setRecordingError] = useState("");
 
   useEffect(() => {
     if (authLoading) return;
@@ -38,6 +40,36 @@ export default function ConversationDetailPage() {
       .finally(() => setLoading(false));
   }, [authLoading, id, router]);
 
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    let cancelled = false;
+
+    async function loadRecording() {
+      if (!detail?.recording?.available) {
+        setRecordingUrl(null);
+        return;
+      }
+      setRecordingError("");
+      try {
+        const blob = await api.getConversationRecordingBlob(detail.id);
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setRecordingUrl(objectUrl);
+      } catch (err) {
+        if (cancelled) return;
+        setRecordingError(
+          err instanceof ApiError ? err.message : "Could not load recording",
+        );
+      }
+    }
+
+    loadRecording();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [detail?.id, detail?.recording?.available]);
+
   const tz = business?.timezone;
 
   if (authLoading || loading || !detail) {
@@ -46,6 +78,8 @@ export default function ConversationDetailPage() {
 
   const conversation = detail;
   const lead = conversation.lead_card;
+  const smsMessages = conversation.sms_messages ?? [];
+  const recording = conversation.recording;
 
   async function handleCallBack() {
     setCalling(true);
@@ -93,6 +127,7 @@ export default function ConversationDetailPage() {
               {lead.is_booked && <Badge>Booked</Badge>}
               {lead.is_emergency && <Badge variant="destructive">Urgent</Badge>}
               {detail.escalated && <Badge variant="destructive">Escalated</Badge>}
+              {recording?.available && <Badge variant="secondary">Recording saved</Badge>}
             </div>
             {detail.ai_summary && (
               <p className="sm:col-span-2 rounded-md bg-muted p-3">{detail.ai_summary}</p>
@@ -115,6 +150,38 @@ export default function ConversationDetailPage() {
             )}
           </CardContent>
         </Card>
+
+        {(recording?.available || recording?.status) && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Call recording</CardTitle>
+              <CardDescription>
+                Listen back if something looks wrong — kept for your records
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {recording.available && recordingUrl ? (
+                <audio controls preload="metadata" className="w-full" src={recordingUrl}>
+                  Your browser does not support audio playback.
+                </audio>
+              ) : recording.available && recordingError ? (
+                <p className="text-sm text-destructive">{recordingError}</p>
+              ) : recording.available ? (
+                <p className="text-sm text-muted-foreground">Loading recording…</p>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Recording status: {recording.status || "pending"}. It usually appears a
+                  minute after the call ends.
+                </p>
+              )}
+              {recording.duration_seconds != null && (
+                <p className="text-xs text-muted-foreground">
+                  Duration: {recording.duration_seconds}s
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>
@@ -149,6 +216,38 @@ export default function ConversationDetailPage() {
             )}
           </CardContent>
         </Card>
+
+        {smsMessages.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Text message log</CardTitle>
+              <CardDescription>
+                Exact SMS sent and received around this conversation
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {smsMessages.map((sms) => (
+                <div key={sms.id} className="rounded border px-3 py-2">
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
+                    <Badge variant="secondary">
+                      {sms.direction === "inbound" ? "Received" : "Sent"}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {formatDateTime(sms.created_at, tz)}
+                    </span>
+                    {!sms.sent && (
+                      <Badge variant="destructive">Failed</Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {sms.from_number || "—"} → {sms.to_number}
+                  </p>
+                  <p className="mt-1 whitespace-pre-wrap">{sms.body}</p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
 
         {detail.activities.length > 0 && (
           <Card>

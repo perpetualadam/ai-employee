@@ -1,10 +1,14 @@
 """Conversation list/detail queries and lead-card enrichment."""
 
+from datetime import timedelta
+
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.domain.call import call_has_booking
 from app.domain.conversation import channel_label, infer_channel
-from app.models import AIActivityLog, Appointment, CallLog, Customer
+from app.models import AIActivityLog, Appointment, CallLog, Customer, SmsLog
 from app.models.enums import AppointmentStatus, ConversationChannel
 from app.schemas import (
     AIActivityDetailResponse,
@@ -12,7 +16,10 @@ from app.schemas import (
     ConversationLeadCard,
     ConversationListItem,
     ConversationMessage,
+    ConversationRecordingInfo,
+    ConversationSmsLogItem,
 )
+from app.services.call_recording_service import CallRecordingService
 
 
 class ConversationService:
@@ -90,6 +97,8 @@ class ConversationService:
             messages=ConversationService._history_to_messages(call),
             activities=[AIActivityDetailResponse.model_validate(a) for a in activities],
             lead_card=ConversationService._build_lead_card(db, call),
+            recording=ConversationService._recording_info(call),
+            sms_messages=ConversationService._sms_messages_for_call(db, call),
         )
 
     @staticmethod
@@ -105,9 +114,67 @@ class ConversationService:
             ai_summary=call.ai_summary,
             escalated=call.escalated,
             is_booked=call_has_booking(call.summary),
+            has_recording=CallRecordingService.recording_available(call),
             created_at=call.created_at,
             lead_card=ConversationService._build_lead_card(db, call),
         )
+
+    @staticmethod
+    def _recording_info(call: CallLog) -> ConversationRecordingInfo:
+        available = CallRecordingService.recording_available(call)
+        playback_url = None
+        if available:
+            base = get_settings().public_api_url.rstrip("/")
+            playback_url = f"{base}/api/v1/conversations/{call.id}/recording"
+        status = getattr(call, "recording_status", None)
+        content_type = getattr(call, "recording_content_type", None)
+        duration = getattr(call, "recording_duration_seconds", None)
+        return ConversationRecordingInfo(
+            available=available,
+            status=status if isinstance(status, str) else None,
+            duration_seconds=duration if isinstance(duration, int) else None,
+            content_type=content_type if isinstance(content_type, str) else None,
+            playback_url=playback_url,
+        )
+
+    @staticmethod
+    def _sms_messages_for_call(db: Session, call: CallLog) -> list[ConversationSmsLogItem]:
+        """SMS audit rows linked to this call or matching the caller around call time."""
+        window = timedelta(hours=4)
+        created = call.created_at
+        query = db.query(SmsLog).filter(SmsLog.business_id == call.business_id)
+        phone = (call.caller_phone or "").strip()
+        if phone:
+            query = query.filter(
+                or_(
+                    SmsLog.call_log_id == call.id,
+                    SmsLog.from_number == phone,
+                    SmsLog.to_number == phone,
+                )
+            )
+        else:
+            query = query.filter(SmsLog.call_log_id == call.id)
+
+        if created is not None:
+            query = query.filter(
+                SmsLog.created_at >= created - window,
+                SmsLog.created_at <= created + window,
+            )
+
+        rows = query.order_by(SmsLog.created_at.asc()).limit(100).all()
+        return [
+            ConversationSmsLogItem(
+                id=row.id,
+                direction=row.direction,
+                from_number=row.from_number,
+                to_number=row.to_number,
+                body=row.body,
+                provider=row.provider,
+                sent=row.sent,
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
 
     @staticmethod
     def _history_to_messages(call: CallLog) -> list[ConversationMessage]:

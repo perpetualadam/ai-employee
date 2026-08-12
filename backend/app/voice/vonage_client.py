@@ -88,6 +88,11 @@ def _voice_headers() -> dict[str, str]:
     return {"Content-Type": "application/json", "Accept": "application/json"}
 
 
+def voice_auth_headers() -> dict[str, str]:
+    """Public auth headers for Voice API / recording downloads."""
+    return _voice_headers()
+
+
 def _voice_request(method: str, path: str, **kwargs: Any) -> dict[str, Any]:
     url = f"{VONAGE_VOICE_BASE}{path}"
     headers = kwargs.pop("headers", {})

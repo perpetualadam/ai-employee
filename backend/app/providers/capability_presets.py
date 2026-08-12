@@ -123,6 +123,8 @@ def vonage_telephony() -> ProviderCapabilities:
         realtime_media_streams=True,
         duplex_voice=True,
         barge_in=True,
+        recordings=True,
+        transcriptions=True,
         local_numbers=True,
         mobile_numbers=True,
         toll_free_numbers=True,

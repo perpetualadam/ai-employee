@@ -165,6 +165,28 @@ async def call_status(
     return _markup_response(markup_builder.build_empty(), markup_builder.content_type)
 
 
+@router.api_route("/recording-status", methods=["GET", "POST"])
+async def recording_status(
+    request: Request,
+    call_log_id: str = Query(...),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Provider recordingStatusCallback — download and store call audio for owner review."""
+    webhook = get_voice_webhook_adapter_for_request(request)
+    markup_builder = get_voice_markup(webhook.provider_name)
+    params = await webhook.parse_request(request)
+
+    from app.services.call_recording_service import CallRecordingService
+
+    CallRecordingService.handle_recording_status(
+        db,
+        call_log_id=call_log_id,
+        params=params,
+        provider=webhook.provider_name,
+    )
+    return _markup_response(markup_builder.build_empty(), markup_builder.content_type)
+
+
 @router.get("/mode")
 def voice_mode_status() -> dict:
     return VoiceModeService.status()

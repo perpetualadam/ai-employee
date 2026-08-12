@@ -132,6 +132,9 @@ export default function ConversationsPage() {
                       </div>
                       <div className="flex flex-wrap gap-1.5">
                         <Badge variant="secondary">{item.channel_label}</Badge>
+                        {item.has_recording && (
+                          <Badge variant="outline">Recording</Badge>
+                        )}
                         {item.lead_card.is_booked && <Badge>Booked</Badge>}
                         {item.lead_card.is_emergency && (
                           <Badge variant="destructive">Urgent</Badge>

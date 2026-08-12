@@ -28,6 +28,7 @@ export default function SettingsPage() {
     escalation_phone: "",
     timezone: "",
     reminders_enabled: true,
+    recording_enabled: true,
   });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -48,6 +49,7 @@ export default function SettingsPage() {
         escalation_phone: business.escalation_phone ?? "",
         timezone: business.timezone,
         reminders_enabled: business.reminders_enabled ?? true,
+        recording_enabled: business.recording_enabled ?? true,
       });
     }
   }, [business]);
@@ -62,6 +64,7 @@ export default function SettingsPage() {
         escalation_phone: form.escalation_phone || undefined,
         timezone: form.timezone,
         reminders_enabled: form.reminders_enabled,
+        recording_enabled: form.recording_enabled,
       });
       setMessage("Settings saved.");
     } catch (err) {
@@ -178,6 +181,23 @@ export default function SettingsPage() {
                 }
               />
               Send automatic appointment reminders (~24 hours before)
+            </label>
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={form.recording_enabled}
+                onChange={(e) =>
+                  setForm({ ...form, recording_enabled: e.target.checked })
+                }
+              />
+              <span>
+                Save call recordings and text message logs for review
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  Callers hear a short notice. You can replay recordings and SMS from
+                  Inbox if there is a dispute or booking issue.
+                </span>
+              </span>
             </label>
             {error && <p className="text-sm text-destructive">{error}</p>}
             {message && <p className="text-sm text-green-600">{message}</p>}

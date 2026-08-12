@@ -36,6 +36,7 @@ What is **built and on `main`** vs what remains.
 | Outbound callback calls | **Done** — `POST /calls/outbound` |
 | Monitoring (Sentry, health) | **Done** — optional Sentry, `/health/live`, `/health/ready` |
 | Call transcript HTTP API + UI | **Done** — `GET /conversations/{id}` + `/dashboard/conversations/{id}` |
+| Call recording + SMS audit for owner review | **Done** — provider-agnostic `CallRecordingAdapter` (Telnyx/Twilio/SignalWire/Vonage/Plivo), `CallRecordingService`, inbox playback + SMS log |
 | Real email delivery | **Done** — SMTP when configured; owner escalation email fallback |
 | Automated phone number provisioning | **Done** — `PhoneProvisioningService` + `/business/phone/*` |
 | CI pipeline | `.github/workflows/ci.yml` on push/PR to `main` |

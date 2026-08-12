@@ -22,7 +22,9 @@ from app.integrations.adapters.telnyx_webhooks import TelnyxVoiceWebhookAdapter
 from app.integrations.adapters.twilio_duplex import TwilioDuplexMediaAdapter
 from app.integrations.adapters.vonage_duplex import VonageDuplexMediaAdapter
 from app.integrations.adapter_selection import select_adapter
+from app.integrations.adapters.call_recording import build_call_recording_adapter
 from app.integrations.contracts import (
+    CallRecordingAdapter,
     EmailProvider,
     SmsInboundAdapter,
     VoiceCallControl,
@@ -194,6 +196,11 @@ def get_email_provider() -> EmailProvider:
     return _email_provider(name)
 
 
+def get_call_recording_adapter(provider: str | None = None) -> CallRecordingAdapter:
+    """Resolve call-recording adapter for a telephony CPaaS name."""
+    return build_call_recording_adapter(provider)
+
+
 def list_registered_integrations() -> dict[str, list[str]]:
     """Diagnostics — which adapter names are registered (for ops / health checks)."""
     return {
@@ -203,6 +210,7 @@ def list_registered_integrations() -> dict[str, list[str]]:
         "sms_outbound": list(_SMS_OUTBOUND_PROVIDERS().keys()),
         "sms_inbound": list(_SMS_INBOUND.keys()),
         "duplex": list(_DUPLEX_ADAPTERS.keys()),
+        "call_recording": ["telnyx", "twilio", "signalwire", "vonage", "plivo"],
         "email": list(_EMAIL_PROVIDERS.keys()),
     }
 
@@ -218,6 +226,7 @@ def _SMS_OUTBOUND_PROVIDERS() -> dict[str, type[SmsProvider]]:
 
 __all__ = [
     "get_ai_provider",
+    "get_call_recording_adapter",
     "get_duplex_media_adapter",
     "get_email_provider",
     "get_sms_inbound_adapter",
@@ -230,6 +239,7 @@ __all__ = [
     "register_sms_inbound",
     "register_voice_control",
     "register_voice_webhook",
+    "CallRecordingAdapter",
     "DevSmsProvider",
     "EmailProvider",
     "SmsInboundAdapter",

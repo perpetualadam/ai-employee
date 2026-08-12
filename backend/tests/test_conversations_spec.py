@@ -40,6 +40,10 @@ def _sample_call(**kwargs):
         ],
     )
     call.created_at = kwargs.get("created_at", datetime.now(UTC))
+    call.recording_status = kwargs.get("recording_status")
+    call.recording_storage_key = kwargs.get("recording_storage_key")
+    call.recording_content_type = kwargs.get("recording_content_type")
+    call.recording_duration_seconds = kwargs.get("recording_duration_seconds")
     return call
 
 
@@ -317,11 +321,20 @@ class ConversationDetailSpecification(unittest.TestCase):
         db.query.return_value.filter.return_value.first.return_value = call
         db.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
 
-        with patch.object(
-            ConversationService,
-            "_build_lead_card",
-            return_value=ConversationLeadCard(),
+        with (
+            patch.object(
+                ConversationService,
+                "_build_lead_card",
+                return_value=ConversationLeadCard(),
+            ),
+            patch.object(
+                ConversationService,
+                "_sms_messages_for_call",
+                return_value=[],
+            ),
+            patch("app.services.conversation_service.get_settings") as settings_mock,
         ):
+            settings_mock.return_value = MagicMock(public_api_url="https://api.example.com")
             detail = ConversationService.get_conversation(db, "biz-1", call.id)
 
         self.assertIsNotNone(detail)
@@ -329,6 +342,7 @@ class ConversationDetailSpecification(unittest.TestCase):
         self.assertEqual(len(detail.messages), 2)
         self.assertEqual(detail.messages[0].content, "No hot water")
         self.assertEqual(detail.transcript, call.transcript)
+        self.assertFalse(detail.recording.available)
 
 
 class OwnerEscalationEmailSpecification(unittest.TestCase):
