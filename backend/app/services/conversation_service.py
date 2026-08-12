@@ -126,11 +126,14 @@ class ConversationService:
         if available:
             base = get_settings().public_api_url.rstrip("/")
             playback_url = f"{base}/api/v1/conversations/{call.id}/recording"
+        status = getattr(call, "recording_status", None)
+        content_type = getattr(call, "recording_content_type", None)
+        duration = getattr(call, "recording_duration_seconds", None)
         return ConversationRecordingInfo(
             available=available,
-            status=call.recording_status,
-            duration_seconds=call.recording_duration_seconds,
-            content_type=call.recording_content_type,
+            status=status if isinstance(status, str) else None,
+            duration_seconds=duration if isinstance(duration, int) else None,
+            content_type=content_type if isinstance(content_type, str) else None,
             playback_url=playback_url,
         )
 
