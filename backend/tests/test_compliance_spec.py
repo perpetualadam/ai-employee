@@ -57,10 +57,30 @@ class ComplianceServiceSpecification(unittest.TestCase):
         self.assertEqual(payload["user"]["email"], "owner@example.com")
         self.assertEqual(payload["customers"][0]["name"], "Jane")
 
-    def test_delete_account_removes_user(self) -> None:
+    def test_delete_account_removes_user_after_purging_recordings(self) -> None:
         db = MagicMock()
         user = MagicMock()
-        ComplianceService.delete_account(db, user)
+        user.id = "user-1"
+        db.query.return_value.filter.return_value.all.return_value = [("biz-1",)]
+        storage = MagicMock()
+        order: list[str] = []
+
+        def _purge(*_args, **_kwargs):
+            order.append("purge")
+
+        def _delete(*_args, **_kwargs):
+            order.append("delete")
+
+        db.delete.side_effect = _delete
+
+        with patch(
+            "app.services.compliance_service.CallRecordingService.delete_stored_recordings_for_businesses",
+            side_effect=_purge,
+        ) as delete_recordings:
+            ComplianceService.delete_account(db, user, storage=storage)
+            delete_recordings.assert_called_once_with(db, ["biz-1"], storage=storage)
+
+        self.assertEqual(order, ["purge", "delete"])
         db.delete.assert_called_once_with(user)
         db.commit.assert_called_once()
 

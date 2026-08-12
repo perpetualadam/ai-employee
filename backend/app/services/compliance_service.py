@@ -15,6 +15,8 @@ from app.models import (
     SmsLog,
     User,
 )
+from app.providers.storage import StorageProvider
+from app.services.call_recording_service import CallRecordingService
 
 
 class ComplianceService:
@@ -134,6 +136,29 @@ class ComplianceService:
         }
 
     @staticmethod
-    def delete_account(db: Session, user: User) -> None:
+    def delete_account(
+        db: Session,
+        user: User,
+        *,
+        storage: StorageProvider | None = None,
+    ) -> None:
+        """
+        Delete the user and cascaded tenant rows.
+
+        Object-storage artifacts (call recordings) are removed first — cascading
+        CallLog deletes would otherwise drop recording_storage_key while leaving
+        bytes under recordings/{business_id}/...
+        """
+        business_ids = [
+            business_id
+            for (business_id,) in db.query(Business.id)
+            .filter(Business.owner_id == user.id)
+            .all()
+        ]
+        CallRecordingService.delete_stored_recordings_for_businesses(
+            db,
+            business_ids,
+            storage=storage,
+        )
         db.delete(user)
         db.commit()
