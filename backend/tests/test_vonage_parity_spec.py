@@ -271,6 +271,61 @@ class VonageParitySpecification(unittest.TestCase):
             self.assertEqual(submitted.data.get("status"), "pending-review")
             submit_tfn.assert_called_once_with("tfn-1", {"status": "SUBMITTED"})
 
+    def test_regulatory_tfn_fallback_skips_application_lookup(self) -> None:
+        """Colon-less TFN ids must not call get_application on attach/submit fallback."""
+        provider = VonageRegulatoryProvider()
+        with patch("app.voice.vonage_client.is_vonage_configured", return_value=True):
+            with patch(
+                "app.voice.vonage_client.get_tfn_registration",
+                side_effect=RuntimeError("tfn unavailable"),
+            ):
+                with patch(
+                    "app.voice.vonage_client.get_media_info",
+                    return_value={"id": "media-9", "original_file_name": "optin.png"},
+                ):
+                    with patch(
+                        "app.voice.vonage_client.update_media_info",
+                        return_value={
+                            "id": "media-9",
+                            "metadata_primary": "tfn-1",
+                            "metadata_secondary": "attached",
+                        },
+                    ) as attach_media:
+                        with patch(
+                            "app.voice.vonage_client.get_application",
+                        ) as get_app:
+                            attached = provider.attach_document(
+                                bundle_id="tfn-1",
+                                document_id="media-9",
+                            )
+            self.assertTrue(attached.data.get("attached"))
+            attach_media.assert_called_once()
+            get_app.assert_not_called()
+
+            with patch(
+                "app.voice.vonage_client.update_tfn_registration",
+                side_effect=RuntimeError("tfn submit unavailable"),
+            ):
+                with patch(
+                    "app.providers.vonage.regulatory._media_items_for_bundle",
+                    return_value=[{"id": "media-9", "metadata_primary": "tfn-1"}],
+                ):
+                    with patch(
+                        "app.voice.vonage_client.update_media_info",
+                        return_value={"id": "media-9", "metadata_secondary": "pending-review"},
+                    ) as submit_media:
+                        with patch(
+                            "app.voice.vonage_client.get_application",
+                        ) as get_app:
+                            with patch(
+                                "app.voice.vonage_client.update_application",
+                            ) as update_app:
+                                submitted = provider.submit_bundle("tfn-1")
+            self.assertEqual(submitted.data.get("status"), "pending-review")
+            submit_media.assert_called_once()
+            get_app.assert_not_called()
+            update_app.assert_not_called()
+
     def test_vonage_outbound_answer_is_ncco(self) -> None:
         markup = VonageVoiceMarkup()
         ncco = json.loads(
