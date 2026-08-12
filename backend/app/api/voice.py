@@ -178,7 +178,12 @@ async def recording_status(
 
     from app.services.call_recording_service import CallRecordingService
 
-    CallRecordingService.handle_recording_status(db, call_log_id=call_log_id, params=params)
+    CallRecordingService.handle_recording_status(
+        db,
+        call_log_id=call_log_id,
+        params=params,
+        provider=webhook.provider_name,
+    )
     return _markup_response(markup_builder.build_empty(), markup_builder.content_type)
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Protocol
 
 from fastapi import Request
@@ -49,6 +50,51 @@ class SmsInboundAdapter(ABC):
     @abstractmethod
     async def parse_inbound(self, request: Request) -> dict[str, str] | None:
         ...
+
+
+@dataclass(frozen=True)
+class NormalizedRecordingEvent:
+    """Provider-agnostic recording webhook payload."""
+
+    status: str
+    recording_url: str | None = None
+    recording_id: str | None = None
+    duration_seconds: int | None = None
+
+
+class CallRecordingAdapter(ABC):
+    """
+    Inject provider-native call recording into answer markup and normalize
+    recording-ready webhooks so storage/playback stays CPaaS-agnostic.
+    """
+
+    @property
+    @abstractmethod
+    def provider_name(self) -> str:
+        ...
+
+    def supports_inline_recording(self) -> bool:
+        return True
+
+    @abstractmethod
+    def inject_recording(self, markup: str, *, base_url: str, call_log_id: str) -> str:
+        ...
+
+    @abstractmethod
+    def normalize_webhook(self, params: dict[str, str]) -> NormalizedRecordingEvent:
+        ...
+
+    def download_recording(self, url: str) -> tuple[bytes, str]:
+        """Fetch recording bytes. Override when the provider requires auth."""
+        import httpx
+
+        with httpx.Client(timeout=60.0, follow_redirects=True) as client:
+            response = client.get(url)
+            response.raise_for_status()
+            content_type = response.headers.get("content-type", "audio/mpeg").split(";")[0].strip()
+            if not content_type.startswith("audio/"):
+                content_type = "audio/mpeg"
+            return response.content, content_type
 
 
 class EmailProvider(ABC):

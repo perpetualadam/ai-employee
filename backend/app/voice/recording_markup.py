@@ -1,34 +1,9 @@
-"""Inject non-blocking call recording into TeXML/TwiML responses."""
+"""Provider-agnostic call recording injection into answer markup."""
 
 from __future__ import annotations
 
-from html import escape
-from urllib.parse import urlencode
-
-from app.domain.recording import supports_xml_call_recording
-
-
-def recording_status_callback_url(base_url: str, call_log_id: str) -> str:
-    prefix = f"{base_url.rstrip('/')}/api/v1/voice"
-    params = urlencode({"call_log_id": call_log_id})
-    return f"{prefix}/recording-status?{params}"
-
-
-def start_recording_xml(base_url: str, call_log_id: str) -> str:
-    """TeXML/TwiML fragment that starts dual-channel recording in the background."""
-    callback = escape(recording_status_callback_url(base_url, call_log_id), quote=True)
-    return (
-        "<Start>"
-        "<Recording "
-        'channels="dual" '
-        'track="both" '
-        'format="mp3" '
-        f'recordingStatusCallback="{callback}" '
-        'recordingStatusCallbackMethod="POST" '
-        'recordingStatusCallbackEvent="completed"'
-        "/>"
-        "</Start>"
-    )
+from app.domain.recording import supports_call_recording
+from app.integrations.adapters.call_recording import recording_status_callback_url
 
 
 def with_call_recording(
@@ -40,14 +15,17 @@ def with_call_recording(
     enabled: bool,
 ) -> str:
     """
-    Insert <Start><Recording/></Start> after <Response> when supported.
-    Safe no-op for NCCO/JSON markup or when recording is disabled.
+    Inject provider-native recording instructions when supported.
+    Safe no-op when disabled or the CPaaS cannot record from answer markup.
     """
-    if not enabled or not supports_xml_call_recording(provider):
+    if not enabled or not supports_call_recording(provider):
         return markup
-    if "<Response>" not in markup:
+    from app.integrations.registry import get_call_recording_adapter
+
+    adapter = get_call_recording_adapter(provider)
+    if not adapter.supports_inline_recording():
         return markup
-    if "<Recording" in markup:
-        return markup
-    fragment = start_recording_xml(base_url, call_log_id)
-    return markup.replace("<Response>", f"<Response>{fragment}", 1)
+    return adapter.inject_recording(markup, base_url=base_url, call_log_id=call_log_id)
+
+
+__all__ = ["recording_status_callback_url", "with_call_recording"]

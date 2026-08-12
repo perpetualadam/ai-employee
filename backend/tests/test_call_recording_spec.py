@@ -1,7 +1,8 @@
-"""Specification: hybrid call recording + inbound SMS audit for owner review."""
+"""Specification: platform-agnostic call recording + inbound SMS audit."""
 
 from __future__ import annotations
 
+import json
 import unittest
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
@@ -10,7 +11,14 @@ from uuid import uuid4
 from app.domain.recording import (
     RECORDING_DISCLOSURE,
     greeting_with_recording_notice,
-    supports_xml_call_recording,
+    supports_call_recording,
+)
+from app.integrations.adapters.call_recording import (
+    PlivoCallRecordingAdapter,
+    TexmlTwimlCallRecordingAdapter,
+    UnsupportedCallRecordingAdapter,
+    VonageCallRecordingAdapter,
+    build_call_recording_adapter,
 )
 from app.models.enums import CallDirection, CallStatus, ConversationChannel
 from app.services.call_recording_service import CallRecordingService
@@ -34,49 +42,121 @@ class RecordingDomainSpecification(unittest.TestCase):
         )
         self.assertEqual(text, "Thank you for calling Acme.")
 
-    def test_xml_providers_support_recording(self) -> None:
-        self.assertTrue(supports_xml_call_recording("telnyx"))
-        self.assertTrue(supports_xml_call_recording("twilio"))
-        self.assertFalse(supports_xml_call_recording("vonage"))
+    def test_supported_providers_include_major_cpaas(self) -> None:
+        for name in ("telnyx", "twilio", "signalwire", "vonage", "plivo"):
+            self.assertTrue(supports_call_recording(name), name)
+        self.assertFalse(supports_call_recording("voipms"))
 
 
-class RecordingMarkupSpecification(unittest.TestCase):
-    def test_injects_start_recording_into_texml(self) -> None:
+class RecordingAdapterSpecification(unittest.TestCase):
+    def test_texml_injects_start_recording(self) -> None:
+        adapter = TexmlTwimlCallRecordingAdapter("telnyx")
         markup = '<?xml version="1.0"?><Response><Say>Hi</Say></Response>'
-        result = with_call_recording(
+        result = adapter.inject_recording(
             markup,
             base_url="https://example.com",
             call_log_id="11111111-1111-1111-1111-111111111111",
-            provider="telnyx",
-            enabled=True,
         )
         self.assertIn("<Start>", result)
         self.assertIn("<Recording", result)
         self.assertIn("recording-status?", result)
-        self.assertIn("channels=\"dual\"", result)
+        self.assertIn('channels="dual"', result)
 
-    def test_skips_injection_when_disabled_or_unsupported(self) -> None:
-        markup = '<?xml version="1.0"?><Response><Say>Hi</Say></Response>'
-        self.assertEqual(
-            with_call_recording(
+    def test_vonage_injects_async_record_action(self) -> None:
+        adapter = VonageCallRecordingAdapter()
+        markup = json.dumps([{"action": "talk", "text": "Hi"}])
+        result = json.loads(
+            adapter.inject_recording(
                 markup,
                 base_url="https://example.com",
                 call_log_id="11111111-1111-1111-1111-111111111111",
-                provider="telnyx",
-                enabled=False,
-            ),
-            markup,
+            )
         )
+        self.assertEqual(result[0]["action"], "record")
+        self.assertEqual(result[0]["channels"], 2)
+        self.assertTrue(result[0]["eventUrl"][0].endswith("recording-status?call_log_id=11111111-1111-1111-1111-111111111111"))
+        self.assertEqual(result[1]["action"], "talk")
+
+    def test_plivo_injects_record_session(self) -> None:
+        adapter = PlivoCallRecordingAdapter()
+        markup = '<?xml version="1.0"?><Response><Speak>Hi</Speak></Response>'
+        result = adapter.inject_recording(
+            markup,
+            base_url="https://example.com",
+            call_log_id="11111111-1111-1111-1111-111111111111",
+        )
+        self.assertIn('recordSession="true"', result)
+        self.assertIn("callbackUrl=", result)
+        self.assertIn("<Speak>Hi</Speak>", result)
+
+    def test_unsupported_provider_is_noop(self) -> None:
+        adapter = UnsupportedCallRecordingAdapter("voipms")
+        markup = "ok"
+        self.assertFalse(adapter.supports_inline_recording())
         self.assertEqual(
-            with_call_recording(
-                markup,
-                base_url="https://example.com",
-                call_log_id="11111111-1111-1111-1111-111111111111",
-                provider="vonage",
-                enabled=True,
-            ),
+            adapter.inject_recording(markup, base_url="https://x", call_log_id="y"),
             markup,
         )
+
+    def test_facade_routes_to_provider_adapters(self) -> None:
+        telnyx = with_call_recording(
+            '<?xml version="1.0"?><Response><Say>Hi</Say></Response>',
+            base_url="https://example.com",
+            call_log_id="11111111-1111-1111-1111-111111111111",
+            provider="twilio",
+            enabled=True,
+        )
+        self.assertIn("<Recording", telnyx)
+
+        vonage = with_call_recording(
+            json.dumps([{"action": "talk", "text": "Hi"}]),
+            base_url="https://example.com",
+            call_log_id="11111111-1111-1111-1111-111111111111",
+            provider="vonage",
+            enabled=True,
+        )
+        self.assertEqual(json.loads(vonage)[0]["action"], "record")
+
+        skipped = with_call_recording(
+            "ok",
+            base_url="https://example.com",
+            call_log_id="11111111-1111-1111-1111-111111111111",
+            provider="voipms",
+            enabled=True,
+        )
+        self.assertEqual(skipped, "ok")
+
+    def test_normalize_webhooks_across_providers(self) -> None:
+        texml = build_call_recording_adapter("signalwire").normalize_webhook(
+            {
+                "RecordingStatus": "completed",
+                "RecordingUrl": "https://cdn.example/a.mp3",
+                "RecordingSid": "RE1",
+                "RecordingDuration": "12",
+            }
+        )
+        self.assertEqual(texml.status, "completed")
+        self.assertEqual(texml.recording_url, "https://cdn.example/a.mp3")
+
+        vonage = build_call_recording_adapter("vonage").normalize_webhook(
+            {
+                "recording_url": "https://api.nexmo.com/v1/files/abc",
+                "recording_uuid": "rec-1",
+                "status": "ok",
+            }
+        )
+        self.assertEqual(vonage.status, "completed")
+        self.assertEqual(vonage.recording_id, "rec-1")
+
+        plivo = build_call_recording_adapter("plivo").normalize_webhook(
+            {
+                "RecordUrl": "https://media.plivo.com/r.mp3",
+                "RecordingID": "p-1",
+                "RecordingDuration": "33",
+            }
+        )
+        self.assertEqual(plivo.recording_url, "https://media.plivo.com/r.mp3")
+        self.assertEqual(plivo.duration_seconds, 33)
 
 
 class CallRecordingServiceSpecification(unittest.TestCase):
@@ -85,6 +165,7 @@ class CallRecordingServiceSpecification(unittest.TestCase):
         call = MagicMock()
         call.id = call_id
         call.business_id = str(uuid4())
+        call.provider = "vonage"
         call.recording_status = "started"
         call.recording_storage_key = None
 
@@ -94,20 +175,25 @@ class CallRecordingServiceSpecification(unittest.TestCase):
         storage = MagicMock()
         storage.upload.return_value = MagicMock(key=f"recordings/{call.business_id}/{call_id}/r1.mp3")
 
-        with patch.object(
-            CallRecordingService,
-            "_download_recording",
-            return_value=(b"ID3fake", "audio/mpeg"),
+        adapter = MagicMock()
+        adapter.provider_name = "vonage"
+        adapter.normalize_webhook.return_value = MagicMock(
+            status="completed",
+            recording_url="https://provider.example/rec.mp3",
+            recording_id="r1",
+            duration_seconds=42,
+        )
+        adapter.download_recording.return_value = (b"ID3fake", "audio/mpeg")
+
+        with patch(
+            "app.services.call_recording_service.get_call_recording_adapter",
+            return_value=adapter,
         ):
             result = CallRecordingService.handle_recording_status(
                 db,
                 call_log_id=call_id,
-                params={
-                    "RecordingStatus": "completed",
-                    "RecordingUrl": "https://provider.example/rec.mp3",
-                    "RecordingSid": "r1",
-                    "RecordingDuration": "42",
-                },
+                params={"recording_url": "https://provider.example/rec.mp3"},
+                provider="vonage",
                 storage=storage,
             )
 
@@ -115,6 +201,7 @@ class CallRecordingServiceSpecification(unittest.TestCase):
         self.assertEqual(call.recording_status, "stored")
         self.assertEqual(call.recording_duration_seconds, 42)
         storage.upload.assert_called_once()
+        adapter.download_recording.assert_called_once_with("https://provider.example/rec.mp3")
         db.commit.assert_called()
 
 
@@ -154,8 +241,6 @@ class ConversationRecordingSurfaceSpecification(unittest.TestCase):
         sms.sent = True
         sms.created_at = call.created_at
 
-        db = MagicMock()
-        db.query.return_value.filter.return_value.first.return_value = call
         activities_query = MagicMock()
         activities_query.filter.return_value.order_by.return_value.all.return_value = []
         sms_query = MagicMock()
@@ -172,20 +257,14 @@ class ConversationRecordingSurfaceSpecification(unittest.TestCase):
                 return activities_query
             if model.__name__ == "SmsLog":
                 return sms_query
-            if model.__name__ == "Customer":
+            if model.__name__ in {"Customer", "Appointment", "Business"}:
                 q = MagicMock()
                 q.filter.return_value.first.return_value = None
-                return q
-            if model.__name__ == "Appointment":
-                q = MagicMock()
                 q.filter.return_value.order_by.return_value.first.return_value = None
-                return q
-            if model.__name__ == "Business":
-                q = MagicMock()
-                q.filter.return_value.first.return_value = None
                 return q
             return MagicMock()
 
+        db = MagicMock()
         db.query.side_effect = query_side_effect
 
         with patch("app.services.conversation_service.get_settings") as settings_mock:
@@ -232,7 +311,7 @@ class InboundSmsAuditSpecification(unittest.TestCase):
                     "+15551234567",
                     "+15557654321",
                     "Hello",
-                    provider="telnyx",
+                    provider="plivo",
                     external_id="msg-1",
                     raw_payload={"from": "+15551234567", "text": "Hello"},
                 )
@@ -240,7 +319,7 @@ class InboundSmsAuditSpecification(unittest.TestCase):
 
         log_service.record_inbound.assert_called_once()
         kwargs = log_service.record_inbound.call_args.kwargs
-        self.assertEqual(kwargs["provider"], "telnyx")
+        self.assertEqual(kwargs["provider"], "plivo")
         self.assertEqual(kwargs["body"], "Hello")
         self.assertEqual(kwargs["business_id"], business.id)
 

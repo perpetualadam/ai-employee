@@ -311,17 +311,23 @@ def handle_inbound_call(db: Session, call_sid: str, from_number: str, to_number:
         business, settings.public_api_url, call.id, call_sid=call_sid
     )
     if getattr(business, "recording_enabled", False):
+        from app.integrations.registry import get_call_recording_adapter
         from app.services.call_recording_service import CallRecordingService
         from app.voice.recording_markup import with_call_recording
 
-        markup = with_call_recording(
-            markup,
-            base_url=settings.public_api_url,
-            call_log_id=call.id,
-            provider=business_markup.provider_name,
-            enabled=True,
-        )
-        CallRecordingService.mark_recording_started(db, call)
+        provider_name = business_markup.provider_name
+        adapter = get_call_recording_adapter(provider_name)
+        if adapter.supports_inline_recording():
+            updated = with_call_recording(
+                markup,
+                base_url=settings.public_api_url,
+                call_log_id=call.id,
+                provider=provider_name,
+                enabled=True,
+            )
+            if updated != markup:
+                markup = updated
+                CallRecordingService.mark_recording_started(db, call)
     return markup
 
 

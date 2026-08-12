@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime, timedelta
 
-import httpx
 from sqlalchemy.orm import Session
 
+from app.integrations.registry import get_call_recording_adapter
 from app.models import CallLog
 from app.providers.factory import get_storage_provider
 from app.providers.storage import StorageProvider
@@ -32,11 +32,12 @@ class CallRecordingService:
         *,
         call_log_id: str,
         params: dict[str, str],
+        provider: str | None = None,
         storage: StorageProvider | None = None,
     ) -> CallLog | None:
         """
-        Handle provider recordingStatusCallback (completed).
-        Downloads the temporary provider URL into durable storage.
+        Handle provider recording-ready webhook.
+        Normalizes via CallRecordingAdapter, then stores audio durably.
         """
         if not is_valid_uuid(call_log_id):
             return None
@@ -46,47 +47,35 @@ class CallRecordingService:
             logger.warning("Recording status for unknown call", extra={"call_log_id": call_log_id})
             return None
 
-        status = (params.get("RecordingStatus") or params.get("recording_status") or "").lower()
-        recording_url = (
-            params.get("RecordingUrl")
-            or params.get("recording_url")
-            or params.get("RecordingUrl0")
-            or ""
-        ).strip()
-        recording_sid = (
-            params.get("RecordingSid")
-            or params.get("recording_sid")
-            or params.get("RecordingId")
-            or ""
-        ).strip() or None
-        duration_raw = params.get("RecordingDuration") or params.get("recording_duration")
-        try:
-            duration = int(float(duration_raw)) if duration_raw not in (None, "") else None
-        except (TypeError, ValueError):
-            duration = None
+        adapter = get_call_recording_adapter(provider or call.provider)
+        event = adapter.normalize_webhook(params)
+        status = (event.status or "").lower()
 
-        if recording_sid:
-            call.external_recording_id = recording_sid
-        if duration is not None:
-            call.recording_duration_seconds = duration
-        if recording_url:
-            call.provider_recording_url = recording_url
+        if event.recording_id:
+            call.external_recording_id = event.recording_id
+        if event.duration_seconds is not None:
+            call.recording_duration_seconds = event.duration_seconds
+        if event.recording_url:
+            call.provider_recording_url = event.recording_url
 
-        if status and status not in ("completed", "available"):
+        if status and status not in ("completed", "available", "ok"):
             call.recording_status = status or call.recording_status
             db.commit()
             return call
 
-        if not recording_url:
+        if not event.recording_url:
             call.recording_status = status or "absent"
             db.commit()
             return call
 
         storage = storage or get_storage_provider()
         try:
-            audio_bytes, content_type = CallRecordingService._download_recording(recording_url)
+            audio_bytes, content_type = adapter.download_recording(event.recording_url)
             ext = "wav" if "wav" in content_type else "mp3"
-            key = f"recordings/{call.business_id}/{call.id}/{recording_sid or 'audio'}.{ext}"
+            key = (
+                f"recordings/{call.business_id}/{call.id}/"
+                f"{event.recording_id or 'audio'}.{ext}"
+            )
             stored = storage.upload(key=key, data=audio_bytes, content_type=content_type)
             call.recording_storage_key = stored.key
             call.recording_content_type = content_type
@@ -94,24 +83,21 @@ class CallRecordingService:
             db.commit()
             logger.info(
                 "Call recording stored",
-                extra={"call_log_id": call.id, "storage_key": stored.key, "bytes": len(audio_bytes)},
+                extra={
+                    "call_log_id": call.id,
+                    "provider": adapter.provider_name,
+                    "storage_key": stored.key,
+                    "bytes": len(audio_bytes),
+                },
             )
         except Exception:
-            logger.exception("Failed to store call recording", extra={"call_log_id": call.id})
+            logger.exception(
+                "Failed to store call recording",
+                extra={"call_log_id": call.id, "provider": adapter.provider_name},
+            )
             call.recording_status = "failed"
             db.commit()
         return call
-
-    @staticmethod
-    def _download_recording(url: str) -> tuple[bytes, str]:
-        # Provider URLs are short-lived; fetch immediately.
-        with httpx.Client(timeout=60.0, follow_redirects=True) as client:
-            response = client.get(url)
-            response.raise_for_status()
-            content_type = response.headers.get("content-type", "audio/mpeg").split(";")[0].strip()
-            if not content_type.startswith("audio/"):
-                content_type = "audio/mpeg"
-            return response.content, content_type
 
     @staticmethod
     def get_playback_bytes(
