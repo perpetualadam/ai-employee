@@ -193,11 +193,17 @@ class TwilioVoiceMarkup(VoiceMarkupBuilder):
         *,
         call_sid: str | None = None,
     ) -> str:
+        from app.domain.recording import greeting_with_recording_notice
+
         trade = resolve_trade_context(business)
         greeting = (
             f"Thank you for calling {business.name}. "
             "I'm the AI receptionist. "
             f"After the tone, tell me what's going on — for example {trade.voice_greeting_example}."
+        )
+        greeting = greeting_with_recording_notice(
+            greeting,
+            recording_enabled=bool(getattr(business, "recording_enabled", False)),
         )
         return self.build_say_and_gather(
             greeting,
@@ -367,11 +373,17 @@ class VonageVoiceMarkup(VoiceMarkupBuilder):
         *,
         call_sid: str | None = None,
     ) -> str:
+        from app.domain.recording import greeting_with_recording_notice
+
         trade = resolve_trade_context(business)
         greeting = (
             f"Thank you for calling {business.name}. "
             "I'm the AI receptionist. "
             f"Tell me what's going on — for example {trade.voice_greeting_example}."
+        )
+        greeting = greeting_with_recording_notice(
+            greeting,
+            recording_enabled=bool(getattr(business, "recording_enabled", False)),
         )
         return self.build_say_and_gather(
             greeting,
@@ -523,11 +535,17 @@ class PlivoVoiceMarkup(VoiceMarkupBuilder):
         *,
         call_sid: str | None = None,
     ) -> str:
+        from app.domain.recording import greeting_with_recording_notice
+
         trade = resolve_trade_context(business)
         greeting = (
             f"Thank you for calling {business.name}. "
             "I'm the AI receptionist. "
             f"After the tone, tell me what's going on — for example {trade.voice_greeting_example}."
+        )
+        greeting = greeting_with_recording_notice(
+            greeting,
+            recording_enabled=bool(getattr(business, "recording_enabled", False)),
         )
         return self.build_say_and_gather(
             greeting,

@@ -119,6 +119,7 @@ class Business(Base, TimestampMixin):
     )
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     reminders_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    recording_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     provider_config: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
 
     @property
@@ -361,6 +362,12 @@ class CallLog(Base, TimestampMixin):
     summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     ai_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     escalated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    recording_status: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    recording_storage_key: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    recording_content_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    recording_duration_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    external_recording_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    provider_recording_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     business: Mapped["Business"] = relationship("Business", back_populates="call_logs")
     customer: Mapped[Optional["Customer"]] = relationship("Customer", back_populates="call_logs")
@@ -370,7 +377,7 @@ class CallLog(Base, TimestampMixin):
 
 
 class SmsLog(Base, TimestampMixin):
-    """Outbound (and future inbound) SMS audit trail with provider attribution."""
+    """Inbound and outbound SMS audit trail with provider attribution."""
 
     __tablename__ = "sms_logs"
 
@@ -381,6 +388,12 @@ class SmsLog(Base, TimestampMixin):
         UUID(as_uuid=False),
         ForeignKey("businesses.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
+    )
+    call_log_id: Mapped[Optional[str]] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("call_logs.id", ondelete="SET NULL"),
+        nullable=True,
         index=True,
     )
     provider: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
@@ -395,6 +408,7 @@ class SmsLog(Base, TimestampMixin):
     external_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
     sent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    raw_payload: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     business: Mapped["Business"] = relationship("Business", back_populates="sms_logs")
 

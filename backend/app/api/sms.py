@@ -13,10 +13,31 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/sms", tags=["sms"])
 
 
-async def _process_inbound_sms(from_number: str, to_number: str, text: str) -> None:
+async def _process_inbound_sms(
+    from_number: str,
+    to_number: str,
+    text: str,
+    *,
+    provider: str,
+    external_id: str | None,
+) -> None:
     db = SessionLocal()
     try:
-        await SmsService.handle_inbound(db, from_number, to_number, text)
+        await SmsService.handle_inbound(
+            db,
+            from_number,
+            to_number,
+            text,
+            provider=provider,
+            external_id=external_id,
+            raw_payload={
+                "from": from_number,
+                "to": to_number,
+                "text": text,
+                "external_id": external_id,
+                "provider": provider,
+            },
+        )
     finally:
         db.close()
 
@@ -47,6 +68,8 @@ async def inbound_sms(
         event["from"],
         event["to"],
         event["text"],
+        provider=adapter.provider_name,
+        external_id=event.get("id") or event.get("external_id"),
     )
     if adapter.provider_name == "voipms":
         return Response(content="ok", media_type="text/plain", status_code=200)

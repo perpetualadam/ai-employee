@@ -168,6 +168,7 @@ def build_say_and_gather(
 
 
 def build_greeting(business: Business, base_url: str, call_log_id: str, *, call_sid: str | None = None) -> str:
+    from app.domain.recording import greeting_with_recording_notice
     from app.domain.trades.registry import resolve_trade_context
 
     trade = resolve_trade_context(business)
@@ -175,6 +176,10 @@ def build_greeting(business: Business, base_url: str, call_log_id: str, *, call_
         f"Thank you for calling {business.name}. "
         "I'm the AI receptionist. "
         f"After the tone, tell me what's going on — for example {trade.voice_greeting_example}."
+    )
+    greeting = greeting_with_recording_notice(
+        greeting,
+        recording_enabled=bool(getattr(business, "recording_enabled", False)),
     )
     return build_say_and_gather(greeting, base_url, call_log_id, call_sid=call_sid, country=business.country)
 

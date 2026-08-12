@@ -113,6 +113,8 @@ class ComplianceService:
                     "caller_phone": call.caller_phone,
                     "status": call.status.value if hasattr(call.status, "value") else str(call.status),
                     "summary": call.summary,
+                    "recording_status": call.recording_status,
+                    "recording_storage_key": call.recording_storage_key,
                     "created_at": call.created_at.isoformat() if call.created_at else None,
                 }
                 for call in calls
@@ -124,6 +126,7 @@ class ComplianceService:
                     "from_number": sms.from_number,
                     "to_number": sms.to_number,
                     "body": sms.body,
+                    "call_log_id": sms.call_log_id,
                     "created_at": sms.created_at.isoformat() if sms.created_at else None,
                 }
                 for sms in sms_logs

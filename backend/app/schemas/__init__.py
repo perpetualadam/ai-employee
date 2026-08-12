@@ -83,6 +83,7 @@ class BusinessUpdate(BaseModel):
     phone_number: Optional[str] = None
     escalation_phone: Optional[str] = None
     reminders_enabled: Optional[bool] = None
+    recording_enabled: Optional[bool] = None
     provider_config: Optional[dict[str, str]] = None
 
 
@@ -109,6 +110,7 @@ class BusinessResponse(BaseModel):
     phone_provisioned: bool = False
     escalation_phone: Optional[str]
     reminders_enabled: bool = True
+    recording_enabled: bool = True
     provider_config: dict[str, str] = Field(default_factory=dict)
     public_slug: Optional[str]
     onboarding_completed: bool
@@ -416,6 +418,7 @@ class ConversationListItem(BaseModel):
     ai_summary: Optional[str]
     escalated: bool
     is_booked: bool
+    has_recording: bool = False
     created_at: datetime
     lead_card: ConversationLeadCard
 
@@ -428,6 +431,25 @@ class AIActivityDetailResponse(BaseModel):
     tool_name: Optional[str]
     input_data: Optional[dict[str, Any]]
     output_data: Optional[dict[str, Any]]
+    created_at: datetime
+
+
+class ConversationRecordingInfo(BaseModel):
+    available: bool = False
+    status: Optional[str] = None
+    duration_seconds: Optional[int] = None
+    content_type: Optional[str] = None
+    playback_url: Optional[str] = None
+
+
+class ConversationSmsLogItem(BaseModel):
+    id: str
+    direction: CallDirection
+    from_number: Optional[str] = None
+    to_number: str
+    body: str
+    provider: str
+    sent: bool
     created_at: datetime
 
 
@@ -448,6 +470,8 @@ class ConversationDetailResponse(BaseModel):
     messages: list[ConversationMessage]
     activities: list[AIActivityDetailResponse]
     lead_card: ConversationLeadCard
+    recording: ConversationRecordingInfo = Field(default_factory=ConversationRecordingInfo)
+    sms_messages: list[ConversationSmsLogItem] = Field(default_factory=list)
 
 
 class AddressConfirmInfoResponse(BaseModel):

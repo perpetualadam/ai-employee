@@ -28,6 +28,10 @@ class SmsService:
         from_number: str,
         to_number: str,
         body: str,
+        *,
+        provider: str = "unknown",
+        external_id: str | None = None,
+        raw_payload: dict | None = None,
     ) -> None:
         business = find_business_by_phone(db, to_number)
         from app.plugins.publishers import publish_sms_received
@@ -42,6 +46,26 @@ class SmsService:
             logger.warning("Inbound SMS with no matching business", extra={"to": to_number})
             return
 
+        text = (body or "").strip()
+        caller = normalize_phone(from_number, business.country) if text else None
+        call_log = (
+            SmsService._find_active_session(db, business.id, caller)
+            if caller
+            else None
+        )
+        if text:
+            SmsService._audit_inbound(
+                db,
+                business=business,
+                from_number=from_number,
+                to_number=to_number,
+                body=text,
+                call_log_id=call_log.id if call_log else None,
+                provider=provider,
+                external_id=external_id,
+                raw_payload=raw_payload,
+            )
+
         denial = SubscriptionService.get_access_denial_reason(business)
         if denial:
             NotificationService(db, business).send_sms(
@@ -50,12 +74,8 @@ class SmsService:
             )
             return
 
-        text = (body or "").strip()
-        if not text:
+        if not text or caller is None:
             return
-
-        caller = normalize_phone(from_number, business.country)
-        call_log = SmsService._find_active_session(db, business.id, caller)
 
         if call_log is None:
             confirmed = SmsService._try_confirm_address_via_text(db, business, caller, text)
@@ -114,6 +134,38 @@ class SmsService:
             logger.warning(
                 "SMS reply failed but conversation was saved",
                 extra={"call_log_id": call_log.id, "error": sms_result.get("error")},
+            )
+
+    @staticmethod
+    def _audit_inbound(
+        db: Session,
+        *,
+        business: Business,
+        from_number: str,
+        to_number: str,
+        body: str,
+        call_log_id: str | None,
+        provider: str,
+        external_id: str | None,
+        raw_payload: dict | None,
+    ) -> None:
+        from app.services.sms_log_service import SmsLogService
+
+        try:
+            SmsLogService(db).record_inbound(
+                business_id=business.id,
+                provider=provider or "unknown",
+                from_number=from_number,
+                to_number=to_number,
+                body=body,
+                external_id=external_id,
+                call_log_id=call_log_id,
+                raw_payload=raw_payload,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to persist inbound SMS audit log",
+                extra={"business_id": business.id, "from": from_number},
             )
 
     @staticmethod

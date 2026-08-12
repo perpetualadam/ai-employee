@@ -126,14 +126,33 @@ export const api = {
       body: JSON.stringify(data),
     }),
   getDashboard: () => request<DashboardSummary>("/dashboard"),
-  listConversations: (params?: { limit?: number; offset?: number }) => {
+  listConversations: async (params?: { limit?: number; offset?: number; page?: number }) => {
     const qs = new URLSearchParams();
-    if (params?.limit) qs.set("limit", String(params.limit));
-    if (params?.offset) qs.set("offset", String(params.offset));
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.limit) qs.set("page_size", String(params.limit));
+    if (params?.offset != null && !params?.page) {
+      const pageSize = params.limit ?? 50;
+      qs.set("page", String(Math.floor(params.offset / pageSize) + 1));
+      qs.set("page_size", String(pageSize));
+    }
     const query = qs.toString();
-    return request<ConversationListItem[]>(`/conversations${query ? `?${query}` : ""}`);
+    const data = await request<PaginatedConversations | ConversationListItem[]>(
+      `/conversations${query ? `?${query}` : ""}`,
+    );
+    if (Array.isArray(data)) return data;
+    return data.items ?? [];
   },
   getConversation: (id: string) => request<ConversationDetail>(`/conversations/${id}`),
+  getConversationRecordingBlob: async (id: string) => {
+    const res = await fetch(`${API_URL}/conversations/${id}/recording`, {
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new ApiError(formatErrorDetail(body.detail), res.status);
+    }
+    return res.blob();
+  },
 
   getAddressConfirmInfo: (token: string) =>
     request<AddressConfirmInfo>(`/public/address-confirm/${token}`),
@@ -284,6 +303,7 @@ export interface Business {
   phone_number: string | null;
   phone_provisioned?: boolean;
   reminders_enabled?: boolean;
+  recording_enabled?: boolean;
   escalation_phone: string | null;
   provider_config?: Record<string, string>;
   public_slug: string | null;
@@ -502,8 +522,18 @@ export interface ConversationListItem {
   ai_summary: string | null;
   escalated: boolean;
   is_booked: boolean;
+  has_recording?: boolean;
   created_at: string;
   lead_card: ConversationLeadCard;
+}
+
+export interface PaginatedConversations {
+  items: ConversationListItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  has_more: boolean;
 }
 
 export interface ConversationMessage {
@@ -518,6 +548,25 @@ export interface ConversationActivity {
   tool_name: string | null;
   input_data: Record<string, unknown> | null;
   output_data: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface ConversationRecording {
+  available: boolean;
+  status: string | null;
+  duration_seconds: number | null;
+  content_type: string | null;
+  playback_url: string | null;
+}
+
+export interface ConversationSmsMessage {
+  id: string;
+  direction: string;
+  from_number: string | null;
+  to_number: string;
+  body: string;
+  provider: string;
+  sent: boolean;
   created_at: string;
 }
 
@@ -538,6 +587,8 @@ export interface ConversationDetail {
   messages: ConversationMessage[];
   activities: ConversationActivity[];
   lead_card: ConversationLeadCard;
+  recording?: ConversationRecording;
+  sms_messages?: ConversationSmsMessage[];
 }
 
 export interface AddressConfirmInfo {

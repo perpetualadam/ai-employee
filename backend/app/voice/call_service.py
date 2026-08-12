@@ -307,7 +307,22 @@ def handle_inbound_call(db: Session, call_sid: str, from_number: str, to_number:
         )
 
     call = create_voice_call(db, business, call_sid, from_number)
-    return business_markup.build_greeting(business, settings.public_api_url, call.id, call_sid=call_sid)
+    markup = business_markup.build_greeting(
+        business, settings.public_api_url, call.id, call_sid=call_sid
+    )
+    if getattr(business, "recording_enabled", False):
+        from app.services.call_recording_service import CallRecordingService
+        from app.voice.recording_markup import with_call_recording
+
+        markup = with_call_recording(
+            markup,
+            base_url=settings.public_api_url,
+            call_log_id=call.id,
+            provider=business_markup.provider_name,
+            enabled=True,
+        )
+        CallRecordingService.mark_recording_started(db, call)
+    return markup
 
 
 def handle_call_status(
